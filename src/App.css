@@ -18,28 +18,23 @@
   filter: drop-shadow(0 0 2em #61dafbaa);
 }
 
+/* Keep the rotating logo animation if present */
 @keyframes logo-spin {
-  from {
-    transform: rotate(0deg);
-  }
-  to {
-    transform: rotate(360deg);
-  }
+  from { transform: rotate(0deg); }
+  to   { transform: rotate(360deg); }
 }
-
 @media (prefers-reduced-motion: no-preference) {
-  a:nth-of-type(2) .logo {
-    animation: logo-spin infinite 20s linear;
-  }
+  a:nth-of-type(2) .logo { animation: logo-spin infinite 20s linear; }
 }
 
-.card {
-  padding: 2em;
-}
+/* small utilities from original */
+.card { padding: 2em; }
+.read-the-docs { color: #888; }
 
-.read-the-docs {
-  color: #888;
-}
+/* ============================
+   Todo app layout
+   grid with three columns: checkbox | content | actions
+   ============================ */
 
 .todo-item {
   display: grid;
@@ -50,71 +45,78 @@
   border-radius: 10px;
   background: #fbfdff;
   border: 1px solid #eef2f7;
+  width: 100%;
+  box-sizing: border-box;
+  overflow: hidden; /* avoid horizontal overflow from long content */
 }
 
+/* checkbox column */
 .todo-col-checkbox {
   display: flex;
-  align-items: start;
+  align-items: flex-start;
   justify-content: center;
   padding-top: 6px;
 }
 
-.todo-col-content {
-  min-width: 0;
-}
+/* content column must be able to shrink; prevents grid overflow */
+.todo-col-content { min-width: 0; }
 
+/* Title: wrap long words, be allowed multi-line */
 .todo-title {
   font-size: 14px;
+  font-weight: 600;
+  margin: 0;
+  word-break: break-word;      /* breaks long words */
+  overflow-wrap: anywhere;     /* robust wrapping */
+  white-space: normal;
   color: #0f172a;
-  word-break: break-word;
 }
 
-.todo-done {
-  text-decoration: line-through;
-  color: #9ca3af;
-}
-
+/* tags line */
 .todo-tags {
-  margin-top: 8px;
+  margin-top: 8px; 
   display: flex;
   gap: 8px;
   flex-wrap: wrap;
 }
 
+/* tag pill */
 .tag {
   padding: 4px 8px;
   border-radius: 999px;
   border: 1px solid #e6eef8;
-  font-size: 12px;
-  color: #0f172a;
   background: #fff;
-}
-
-.no-tags {
   font-size: 12px;
-  color: #9ca3af;
+  color: inherit; /* inherits title color or muted color when done */
 }
 
+/* default "no tags" text */
+.no-tags { font-size: 12px; color: #9ca3af; }
+
+/* meta line (date + priority badge) on its own line */
 .todo-meta {
   margin-top: 8px;
-  font-size: 12px;
-  color: #6b7280;
   display: flex;
   gap: 12px;
   align-items: center;
+  font-size: 12px;
+  color: #6b7280;
+  flex-wrap: wrap;
 }
+.todo-date { display: inline-block; }
 
+/* priority badge */
 .priority-badge {
   padding: 3px 8px;
   border-radius: 999px;
-  background: #f1f5f9;
-  border: 1px solid #e6eef8;
-  text-transform: capitalize;
   font-size: 11px;
-  color: #111827;
+  text-transform: capitalize;
+  border: 1px solid transparent;
+  display: inline-block;
+  margin-left: 6px; /* small separation from date */
 }
 
-/* actions column */
+/* actions column (edit/delete) */
 .todo-col-actions {
   display: flex;
   flex-direction: column;
@@ -122,13 +124,14 @@
   gap: 8px;
 }
 
-/* small utilities */
+/* input & editor utilities */
 .editor-input {
   padding: 8px;
   border-radius: 8px;
   border: 1px solid #e6eef8;
   background: #fff;
   font-size: 13px;
+  box-sizing: border-box;
 }
 
 .editor-btn {
@@ -139,6 +142,7 @@
   border: none;
 }
 
+/* small buttons */
 .btn-plain {
   padding: 6px 8px;
   border-radius: 8px;
@@ -146,7 +150,6 @@
   background: #fff;
   font-size: 13px;
 }
-
 .btn-danger {
   padding: 6px 8px;
   border-radius: 8px;
@@ -156,84 +159,76 @@
   font-size: 13px;
 }
 
-.todo-tags {
-  margin-top: 8px;       /* ensures tags are visually separate from title */
-  display: flex;
-  gap: 8px;
-  flex-wrap: wrap;
-}
+/* ============================
+   Priority colour rules (title + badge)
+   Use !important to beat possible global overrides (keeps contrast)
+   ============================ */
 
-.todo-meta {
-  margin-top: 8px;       /* ensures date/priority are on a separate line */
-  display: flex;
-  gap: 12px;
-  align-items: center;
-  font-size: 12px;
-  color: #6b7280;
-}
-
-/* Priority badge */
-.priority-badge {
-  padding: 4px 8px;
-  border-radius: 999px;
-  font-size: 11px;
-  text-transform: capitalize;
-  border: 1px solid transparent;
-}
-
-/* Colour-code the title and badge by priority */
-.prio-high.todo-title,
-.todo-title.prio-high {
-  color: #b91c1c; /* red */
+/* High (red) */
+.todo-title.prio-high,
+.prio-high.todo-title {
+  color: #b91c1c !important;
 }
 .priority-badge.prio-high {
   background: #fff1f0;
   border-color: #fecaca;
-  color: #b91c1c;
+  color: #b91c1c !important;
 }
 
-.prio-medium.todo-title,
-.todo-title.prio-medium {
-  color: #d97706; /* amber/yellow */
+/* Medium (amber) */
+.todo-title.prio-medium,
+.prio-medium.todo-title {
+  color: #b45309 !important; /* darker amber for readability */
 }
 .priority-badge.prio-medium {
-  background: #fff7ed;
+  background: #fffbeb;
   border-color: #fde68a;
-  color: #92400e;
+  color: #92400e !important;
 }
 
-.prio-low.todo-title,
-.todo-title.prio-low {
-  color: #059669; /* green */
+/* Low (green) */
+.todo-title.prio-low,
+.prio-low.todo-title {
+  color: #027a48 !important;
 }
 .priority-badge.prio-low {
   background: #ecfdf5;
   border-color: #bbf7d0;
-  color: #065f46;
+  color: #065f46 !important;
 }
 
-/* Strikethrough/muted when done — applies to whole item */
-.todo-item.todo-done {
-  opacity: 0.75;
-}
+/* ============================
+   Done state: strike & mute whole item
+   Use strong specificity so it overrides other color rules
+   ============================ */
+
+.todo-item.todo-done { opacity: 0.95; }
+
 .todo-item.todo-done .todo-title,
 .todo-item.todo-done .tag,
 .todo-item.todo-done .todo-meta,
-.todo-item.todo-done .priority-badge {
-  text-decoration: line-through;
+.todo-item.todo-done .priority-badge,
+.todo-item.todo-done .todo-date {
   color: #9ca3af !important;
-  border-color: #f0f0f0 !important;
+  text-decoration: line-through !important;
   background: transparent !important;
+  border-color: #f0f0f0 !important;
 }
 
-/* ensure tags visually separate from date line */
-.todo-tags .tag { 
-  background: #fff; 
-  border: 1px solid #e6eef8; 
-  padding: 4px 8px; 
-  border-radius: 999px; 
-  font-size: 12px;
-}
+/* ensure tag background doesn't clash while struck-through */
+.todo-item.todo-done .tag { background: transparent !important; border-color: transparent !important; }
 
-/* small tweak: title weight and wrap */
-.todo-title { font-weight: 600; word-break: break-word; }
+/* ============================
+   Small responsive tweaks
+   ============================ */
+
+@media (max-width: 640px) {
+  .todo-item {
+    grid-template-columns: 40px 1fr 64px;
+    gap: 8px;
+    padding: 10px;
+  }
+  .priority-badge { margin-left: 4px; }
+  .editor-input { font-size: 12px; }
+  .btn-plain, .btn-danger { font-size: 12px; padding: 6px 7px; }
+}
