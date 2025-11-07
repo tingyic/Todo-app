@@ -344,4 +344,11 @@
     outline: 2px solid rgba(125,211,252,0.12);
     box-shadow: 0 0 0 3px rgba(125,211,252,0.06);
   }
+
+  /*removing bullet point from initial app launch style*/
+  .todo-list {
+    list-style: none;
+    padding-left: 0;
+    margin: 0;
+  }
 }

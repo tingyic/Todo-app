@@ -11,7 +11,7 @@ type Props = {
 export default function TodoList({ todos, onToggle, onRemove, onUpdate }: Props) {
   if (!todos.length) return <div className="text-center text-slate-400 mt-6">No todos</div>;
   return (
-    <ul className="space-y-2">
+    <ul className="todo-list space-y-2">
       {todos.map(t => (
         <li key={t.id}>
           <TodoItem todo={t} onToggle={onToggle} onRemove={onRemove} onUpdate={onUpdate} />
