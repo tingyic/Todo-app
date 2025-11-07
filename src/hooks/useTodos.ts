@@ -1,5 +1,5 @@
 import { useEffect, useReducer } from "react";
-import type { Todo, Priority } from "../types";
+import type { Todo } from "../types";
 
 const LOCAL_KEY = "todoapp:v1";
 
@@ -53,7 +53,6 @@ export function useTodos() {
       console.warn("Failed to load todos:", e);
     }
 
-    // initial sample if none
     dispatch({
       type: "INIT",
       todos: [
@@ -70,7 +69,6 @@ export function useTodos() {
     });
   }, []);
 
-  // persist
   useEffect(() => {
     try {
       localStorage.setItem(LOCAL_KEY, JSON.stringify(state.todos));
@@ -79,7 +77,6 @@ export function useTodos() {
     }
   }, [state.todos]);
 
-  // actions
   const add = (text: string) => {
     const todo: Todo = {
       id: uid(),

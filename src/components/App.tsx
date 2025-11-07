@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { useTodos } from "../hooks/useTodos";
 import TodoEditor from "./TodoEditor";
 import TodoList from "./TodoList";
@@ -33,7 +33,7 @@ export default function App() {
         return a.due!.localeCompare(b.due!);
       });
     } else if (sortBy === "priority") {
-      const weight = { high: 0, medium: 1, low: 2 } as any;
+      const weight = { high: 0, medium: 1, low: 2 } as const;
       list.sort((a, b) => weight[a.priority] - weight[b.priority]);
     } else {
       list.sort((a, b) => b.createdAt - a.createdAt);
@@ -45,18 +45,22 @@ export default function App() {
     <div className="min-h-screen bg-gradient-to-br from-slate-50 to-white flex items-start justify-center py-12 px-4">
       <div className="w-full max-w-3xl bg-white rounded-2xl shadow-lg p-6">
         <header className="flex items-center justify-between mb-4">
-          <h1 className="text-2xl font-semibold">Todo — focus, ship, repeat</h1>
+          <h1 className="text-2xl font-semibold">Todo</h1>
           <div className="text-sm text-slate-500">{stats.remaining} left • {stats.done} done</div>
         </header>
 
         <TodoEditor onAdd={add} />
 
-        <Toolbar total={stats.total} done={stats.done} remaining={stats.remaining}
-                 filter={filter} setFilter={setFilter}
-                 query={query} setQuery={setQuery}
-                 sortBy={sortBy} setSortBy={setSortBy}
-                 clearCompleted={clearCompleted}
-                 markAll={setAll}
+        {/* Toolbar no longer needs total/done/remaining props */}
+        <Toolbar
+          filter={filter}
+          setFilter={setFilter}
+          query={query}
+          setQuery={setQuery}
+          sortBy={sortBy}
+          setSortBy={setSortBy}
+          clearCompleted={clearCompleted}
+          markAll={setAll}
         />
 
         <main>
@@ -65,7 +69,7 @@ export default function App() {
 
         <footer className="mt-6 flex items-center justify-between text-sm text-slate-500">
           <div>{stats.total} items</div>
-          <div>Built with ❤️ and React + TypeScript</div>
+          <div>Made by Ting Yi</div>
         </footer>
       </div>
     </div>
