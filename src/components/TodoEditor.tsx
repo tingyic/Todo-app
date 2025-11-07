@@ -1,30 +1,77 @@
-import React, { useState } from "react";
+import { useState, type ChangeEvent } from "react";
+
+type AddPayload = {
+  text: string;
+  tags?: string;
+  due?: string;
+  priority?: "high" | "medium" | "low";
+};
 
 type Props = {
-  onAdd: (text: string) => void;
+  onAdd: (payload: { text: string; tags?: string[]; due?: string | null; priority?: "high" | "medium" | "low" }) => void;
 };
 
 export default function TodoEditor({ onAdd }: Props) {
   const [text, setText] = useState("");
+  const [tags, setTags] = useState("");
+  const [due, setDue] = useState("");
+  const [priority, setPriority] = useState<AddPayload["priority"]>("medium");
 
   function submit(e?: React.FormEvent) {
     e?.preventDefault();
     const t = text.trim();
     if (!t) return;
-    onAdd(t);
+    const tagsArr = tags.split(",").map(s => s.trim()).filter(Boolean);
+    onAdd({ text: t, tags: tagsArr.length ? tagsArr : undefined, due: due || null, priority });
     setText("");
+    setTags("");
+    setDue("");
+    setPriority("medium");
+  }
+  
+  function onPriorityChange(e: ChangeEvent<HTMLSelectElement>) {
+    setPriority(e.target.value as AddPayload["priority"]);
   }
 
   return (
-    <form onSubmit={submit} className="flex gap-2 mb-4">
+    <form onSubmit={submit} style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 12 }}>
       <input
         value={text}
         onChange={(e) => setText(e.target.value)}
         placeholder="What needs doing? (Enter to add)"
-        className="flex-1 rounded-md border p-2"
+        className="editor-input"
+        style={{ flex: 1 }}
         autoFocus
       />
-      <button type="submit" className="px-4 py-2 rounded-md bg-slate-800 text-white">Add</button>
+
+      <input
+        value={tags}
+        onChange={(e) => setTags(e.target.value)}
+        placeholder="tags (comma separated)"
+        className="editor-input"
+        style={{ width: 180 }}
+      />
+
+      <input
+        type="date"
+        value={due}
+        onChange={(e) => setDue(e.target.value)}
+        className="editor-input"
+        style={{ width: 150 }}
+      />
+
+      <select 
+            value={priority} 
+            onChange={onPriorityChange} 
+            className="editor-input" 
+            style={{ width: 120 }}
+        >
+            <option value="high">High</option>
+            <option value="medium">Medium</option>
+            <option value="low">Low</option>
+      </select>
+
+      <button type="submit" className="editor-btn">Add</button>
     </form>
   );
 }

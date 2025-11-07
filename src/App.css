@@ -40,3 +40,118 @@
 .read-the-docs {
   color: #888;
 }
+
+.todo-item {
+  display: grid;
+  grid-template-columns: 48px 1fr 96px; /* checkbox | content | actions */
+  gap: 12px;
+  align-items: start;
+  padding: 12px;
+  border-radius: 10px;
+  background: #fbfdff;
+  border: 1px solid #eef2f7;
+}
+
+.todo-col-checkbox {
+  display: flex;
+  align-items: start;
+  justify-content: center;
+  padding-top: 6px;
+}
+
+.todo-col-content {
+  min-width: 0;
+}
+
+.todo-title {
+  font-size: 14px;
+  color: #0f172a;
+  word-break: break-word;
+}
+
+.todo-done {
+  text-decoration: line-through;
+  color: #9ca3af;
+}
+
+.todo-tags {
+  margin-top: 8px;
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.tag {
+  padding: 4px 8px;
+  border-radius: 999px;
+  border: 1px solid #e6eef8;
+  font-size: 12px;
+  color: #0f172a;
+  background: #fff;
+}
+
+.no-tags {
+  font-size: 12px;
+  color: #9ca3af;
+}
+
+.todo-meta {
+  margin-top: 8px;
+  font-size: 12px;
+  color: #6b7280;
+  display: flex;
+  gap: 12px;
+  align-items: center;
+}
+
+.priority-badge {
+  padding: 3px 8px;
+  border-radius: 999px;
+  background: #f1f5f9;
+  border: 1px solid #e6eef8;
+  text-transform: capitalize;
+  font-size: 11px;
+  color: #111827;
+}
+
+/* actions column */
+.todo-col-actions {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 8px;
+}
+
+/* small utilities */
+.editor-input {
+  padding: 8px;
+  border-radius: 8px;
+  border: 1px solid #e6eef8;
+  background: #fff;
+  font-size: 13px;
+}
+
+.editor-btn {
+  padding: 8px 12px;
+  border-radius: 8px;
+  background: #111827;
+  color: #fff;
+  border: none;
+}
+
+.btn-plain {
+  padding: 6px 8px;
+  border-radius: 8px;
+  border: 1px solid #eef2f7;
+  background: #fff;
+  font-size: 13px;
+}
+
+.btn-danger {
+  padding: 6px 8px;
+  border-radius: 8px;
+  border: 1px solid #fdecea;
+  background: #fff7f6;
+  color: #b91c1c;
+  font-size: 13px;
+}
