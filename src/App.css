@@ -222,13 +222,126 @@
    Small responsive tweaks
    ============================ */
 
-@media (max-width: 640px) {
+@media (prefers-color-scheme: dark) {
+  /* page background and base text are already dark from your index.css;
+     here we give components dark backgrounds and high-contrast text. */
+
+  /* Card / todo row */
   .todo-item {
-    grid-template-columns: 40px 1fr 64px;
-    gap: 8px;
-    padding: 10px;
+    background: #0b1220;          /* dark card */
+    border-color: #1f2a37;
+    color: #e6eef8;
   }
-  .priority-badge { margin-left: 4px; }
-  .editor-input { font-size: 12px; }
-  .btn-plain, .btn-danger { font-size: 12px; padding: 6px 7px; }
+
+  /* Left column checkbox — keep it visible */
+  .todo-col-checkbox input[type="checkbox"] {
+    accent-color: #7dd3fc; /* light-ish accent for checkbox */
+  }
+
+  /* Content column text color */
+  .todo-col-content,
+  .todo-col-content * {
+    color: #e6eef8;
+  }
+
+  /* Title color: default when no priority class */
+  .todo-title { color: #eef2f7 !important; }
+
+  /* Tags: dark pill with visible text */
+  .tag {
+    background: #071025;
+    border-color: #203040;
+    color: #e6eef8;
+  }
+  .no-tags { color: #94a3b8; }
+
+  /* Inputs in the editor / edit form */
+  .editor-input {
+    background: #071025;
+    border-color: #203040;
+    color: #e6eef8;
+  }
+  .editor-input::placeholder {
+    color: #94a3b8;
+    opacity: 1;
+  }
+
+  /* Editor add button */
+  .editor-btn {
+    background: #0f1724;
+    color: #f8fafc;
+    border-color: #253040;
+  }
+
+  /* Small buttons (edit/delete etc) */
+  .btn-plain {
+    background: #071025;
+    color: #e6eef8;
+    border-color: #203040;
+  }
+  .btn-plain:hover { background: #0f2130; }
+
+  .btn-danger {
+    background: #2a0a0a;
+    color: #ffd6d6;
+    border-color: #4a1515;
+  }
+
+  /* Priority badges: keep the color tint but adapt background/text for dark */
+  .priority-badge.prio-high {
+    background: #3a0f12; border-color: #5a1b1b; color: #ffb4b4 !important;
+  }
+  .priority-badge.prio-medium {
+    background: #33210a; border-color: #5a4510; color: #ffd8a8 !important;
+  }
+  .priority-badge.prio-low {
+    background: #083222; border-color: #134b31; color: #bff3d9 !important;
+  }
+
+  /* Also keep title priority colouring visible in dark mode (override if needed) */
+  .todo-title.prio-high { color: #ff7b7b !important; }
+  .todo-title.prio-medium { color: #ffb86b !important; }
+  .todo-title.prio-low { color: #7be3a6 !important; }
+
+  /* Edit form action buttons (Save / Cancel) */
+  .todo-col-actions .btn-plain,
+  .todo-col-actions .btn-danger {
+    background: #071025;
+    color: #e6eef8;
+    border-color: #203040;
+  }
+
+  /* When editing, the input/select should also be visible */
+  .todo-item input[type="date"],
+  .todo-item select,
+  .todo-item input[type="text"] {
+    background: #071025;
+    color: #e6eef8;
+    border-color: #203040;
+  }
+  .todo-item select option { background: #071025; color: #e6eef8; }
+
+  /* Done state in dark mode: slightly lighter text + strike */
+  .todo-item.todo-done,
+  .todo-item.todo-done * {
+    color: #9aa6b2 !important;
+    text-decoration: line-through !important;
+    opacity: 0.9;
+  }
+
+  /* ensure priority badges for done items also look muted */
+  .todo-item.todo-done .priority-badge {
+    background: transparent !important;
+    border-color: transparent !important;
+    color: #9aa6b2 !important;
+  }
+
+  /* Ensure long content still wraps the same in dark mode */
+  .todo-title { word-break: break-word; overflow-wrap: anywhere; }
+
+  /* Slight focus ring for accessibility */
+  .editor-input:focus, .btn-plain:focus, .editor-btn:focus, .editor-input:focus-visible {
+    outline: 2px solid rgba(125,211,252,0.12);
+    box-shadow: 0 0 0 3px rgba(125,211,252,0.06);
+  }
 }

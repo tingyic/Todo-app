@@ -69,6 +69,7 @@ export default function App() {
 
         <footer className="mt-6 flex items-center justify-between text-sm text-slate-500">
           <div>{stats.total} items</div>
+          <div> Have a nice day :)</div>
           <div>Made by Ting Yi</div>
         </footer>
       </div>
