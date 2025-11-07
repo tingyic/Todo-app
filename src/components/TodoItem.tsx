@@ -1,16 +1,30 @@
 import { useState } from "react";
-import type { Todo, Priority } from "../types";
+import type { Todo, Priority, Recurrence } from "../types";
 import { formatLocalDateTime } from "../utils/dates";
 
 type Props = {
   todo: Todo;
-  onToggle: (id: string) => void;
+  onToggle: (id: string, createNext?: boolean | null) => void; // createNext overrides global setting
   onRemove: (id: string) => void;
   onUpdate: (id: string, patch: Partial<Todo>) => void;
 };
 
+function recurrenceLabel(r?: Todo["recurrence"]) {
+  if (!r) return "";
+  if (r.freq === "daily") return `Repeats: every ${r.interval ?? 1} day(s)`;
+  if (r.freq === "weekly") {
+    const days = (r as any).weekdays as number[] | undefined;
+    const dayNames = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+    const list = days && days.length ? days.map(d => dayNames[d]).join(", ") : "weekly";
+    return `Repeats: ${list}`;
+  }
+  if (r.freq === "monthly") return `Repeats: every ${r.interval ?? 1} month(s)`;
+  return "";
+}
+
 export default function TodoItem({ todo, onToggle, onRemove, onUpdate }: Props) {
   const [editing, setEditing] = useState(false);
+
   const [draft, setDraft] = useState({
     text: todo.text,
     due: todo.due ?? "",
@@ -18,52 +32,114 @@ export default function TodoItem({ todo, onToggle, onRemove, onUpdate }: Props) 
     priority: todo.priority as Priority,
   });
 
+  // recurrence editing state (in edit mode)
+  const [isRecurring, setIsRecurring] = useState<boolean>(!!todo.recurrence);
+  const [freq, setFreq] = useState<Recurrence["freq"]>(todo.recurrence?.freq ?? "daily");
+  const [interval, setInterval] = useState<number>((todo.recurrence?.interval as number) ?? 1);
+  const [weekdays, setWeekdays] = useState<number[]>((todo.recurrence && (todo.recurrence as any).weekdays) ?? []);
+
+  // inline confirm for toggle on recurring todos
+  const [confirmOpen, setConfirmOpen] = useState(false);
+
+  function toggleWeekday(d: number) {
+    setWeekdays(prev => (prev.includes(d) ? prev.filter(x => x !== d) : [...prev, d].sort()));
+  }
+
   function save() {
+    const recurrence: Recurrence | null = isRecurring
+      ? freq === "daily"
+        ? { freq: "daily", interval: Math.max(1, Math.floor(interval)) }
+        : freq === "weekly"
+          ? { freq: "weekly", interval: Math.max(1, Math.floor(interval)), weekdays: weekdays.length ? weekdays : undefined }
+          : { freq: "monthly", interval: Math.max(1, Math.floor(interval)), dayOfMonth: undefined }
+      : null;
+
     onUpdate(todo.id, {
       text: draft.text.trim() || todo.text,
       due: draft.due || null,
       tags: draft.tags.split(",").map(s => s.trim()).filter(Boolean),
       priority: draft.priority,
+      recurrence,
     });
     setEditing(false);
   }
 
+  // when user clicks checkbox
+  function handleCheckboxClick() {
+    // If toggling from done -> undone, just toggle (no confirm)
+    if (todo.done) {
+      onToggle(todo.id);
+      return;
+    }
+
+    // If non-recurring, simply toggle; if recurring, show inline confirm
+    if (!todo.recurrence) {
+      onToggle(todo.id);
+      return;
+    }
+
+    // show inline confirm to let user choose
+    setConfirmOpen(true);
+  }
+
+  const recLabel = recurrenceLabel(todo.recurrence);
+
   return (
     <div className={`todo-item ${todo.done ? "todo-done" : ""}`}>
-      {/* left column: checkbox */}
       <div className="todo-col-checkbox">
-        <input aria-label="Toggle todo" type="checkbox" checked={todo.done} onChange={() => onToggle(todo.id)} />
+        <input
+          aria-label="Toggle todo"
+          type="checkbox"
+          checked={todo.done}
+          onChange={handleCheckboxClick}
+        />
       </div>
 
-      {/* main content */}
       <div className="todo-col-content">
         {!editing ? (
           <>
             <div className={`todo-title prio-${todo.priority}`}>{todo.text}</div>
 
             <div className="todo-tags" aria-hidden={todo.tags.length === 0}>
-              {todo.tags.length ? (
-                todo.tags.map(t => <span key={t} className="tag">#{t}</span>)
-              ) : (
-                <span className="no-tags">no tags</span>
-              )}
+              {todo.tags.length ? todo.tags.map(t => <span key={t} className="tag">#{t}</span>) : <span className="no-tags">no tags</span>}
             </div>
 
             <div className="todo-meta">
               <span className="todo-date">{todo.due ? formatLocalDateTime(todo.due) : new Date(todo.createdAt).toLocaleString()}</span>
               <span className={`priority-badge prio-${todo.priority}`}>{todo.priority}</span>
             </div>
+
+            {recLabel ? <div style={{ marginTop: 6, fontSize: 12, color: "#6b7280" }}>{recLabel}</div> : null}
+
+            {/* inline confirm UI (visible when user checks recurring todo) */}
+            {confirmOpen && (
+              <div style={{ marginTop: 8, display: "flex", gap: 8 }}>
+                <button
+                  className="btn-plain"
+                  onClick={() => { setConfirmOpen(false); onToggle(todo.id, true); }}
+                >
+                  Create next
+                </button>
+                <button
+                  className="btn-plain"
+                  onClick={() => { setConfirmOpen(false); onToggle(todo.id, false); }}
+                >
+                  Mark done permanently
+                </button>
+                <button
+                  className="btn-plain"
+                  onClick={() => { setConfirmOpen(false); /* cancel */ }}
+                >
+                  Cancel
+                </button>
+              </div>
+            )}
           </>
         ) : (
           <>
-            <input
-              className="editor-input"
-              value={draft.text}
-              onChange={(e) => setDraft(d => ({ ...d, text: e.target.value }))}
-            />
+            <input className="editor-input" value={draft.text} onChange={(e) => setDraft(d => ({ ...d, text: e.target.value }))} />
 
             <div style={{ display: "flex", gap: 8, marginTop: 6, flexWrap: "wrap" }}>
-              {/* datetime-local for editing due (supports both date + time) */}
               <input
                 type="datetime-local"
                 className="editor-input"
@@ -71,7 +147,6 @@ export default function TodoItem({ todo, onToggle, onRemove, onUpdate }: Props) 
                 onChange={(e) => setDraft(d => ({ ...d, due: e.target.value }))}
                 style={{ minWidth: 200 }}
               />
-
               <input
                 className="editor-input"
                 placeholder="tags: a, b"
@@ -79,17 +154,54 @@ export default function TodoItem({ todo, onToggle, onRemove, onUpdate }: Props) 
                 onChange={(e) => setDraft(d => ({ ...d, tags: e.target.value }))}
                 style={{ minWidth: 150 }}
               />
-
-              <select
-                value={draft.priority}
-                onChange={(e) => setDraft(d => ({ ...d, priority: e.target.value as Priority }))}
-                className="editor-input"
-                style={{ width: 120 }}
-              >
+              <select value={draft.priority} onChange={(e) => setDraft(d => ({ ...d, priority: e.target.value as Priority }))} className="editor-input" style={{ width: 120 }}>
                 <option value="high">High</option>
                 <option value="medium">Medium</option>
                 <option value="low">Low</option>
               </select>
+            </div>
+
+            {/* Recurrence editor UI */}
+            <div style={{ marginTop: 8, display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+              <label style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                <input type="checkbox" checked={isRecurring} onChange={(e) => setIsRecurring(e.target.checked)} />
+                Recurring
+              </label>
+
+              {isRecurring && (
+                <>
+                  <select value={freq} onChange={(e) => setFreq(e.target.value as any)} className="editor-input" style={{ width: 120 }}>
+                    <option value="daily">Daily</option>
+                    <option value="weekly">Weekly</option>
+                    <option value="monthly">Monthly</option>
+                  </select>
+
+                  <input
+                    className="editor-input"
+                    style={{ width: 80 }}
+                    type="number"
+                    min={1}
+                    value={interval}
+                    onChange={(e) => setInterval(parseInt(e.target.value || "1", 10))}
+                  />
+
+                  {freq === "weekly" && (
+                    <div style={{ display: "flex", gap: 6 }}>
+                      {["S","M","T","W","T","F","S"].map((label, i) => (
+                        <button
+                          key={i}
+                          type="button"
+                          onClick={() => toggleWeekday(i)}
+                          className="btn-plain"
+                          style={{ padding: "6px 8px", background: weekdays.includes(i) ? "#eef" : undefined }}
+                        >
+                          {label}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </>
+              )}
             </div>
 
             <div style={{ marginTop: 8 }}>
@@ -100,24 +212,19 @@ export default function TodoItem({ todo, onToggle, onRemove, onUpdate }: Props) 
         )}
       </div>
 
-      {/* actions column */}
       <div className="todo-col-actions">
         {!editing ? (
           <>
-            <button
-              className="btn-plain"
-              onClick={() => {
-                setEditing(true);
-                setDraft({
-                  text: todo.text,
-                  due: todo.due ?? "",
-                  tags: todo.tags.join(", "),
-                  priority: todo.priority,
-                });
-              }}
-            >
-              Edit
-            </button>
+            <button className="btn-plain" onClick={() => {
+              setEditing(true);
+              setDraft({ text: todo.text, due: todo.due ?? "", tags: todo.tags.join(", "), priority: todo.priority });
+              // initialize recurrence edit state
+              setIsRecurring(!!todo.recurrence);
+              setFreq((todo.recurrence?.freq as any) ?? "daily");
+              setInterval((todo.recurrence?.interval as any) ?? 1);
+              setWeekdays((todo.recurrence && (todo.recurrence as any).weekdays) ?? []);
+            }}>Edit</button>
+
             <button className="btn-danger" onClick={() => onRemove(todo.id)}>Delete</button>
           </>
         ) : null}

@@ -167,7 +167,13 @@ export function useTodos() {
     dispatch({ type: "ADD", todo });
   };
 
-  const toggle = (id: string) => {
+  /**
+   * toggle(id, createNext?)
+   * - createNext === undefined || null  => use global autoCreateNext
+   * - createNext === true  => force create next occurrence
+   * - createNext === false => do NOT create next occurrence
+   */
+  const toggle = (id: string, createNext?: boolean | null) => {
     // find todo
     const t = state.todos.find(x => x.id === id);
     // toggle base behaviour
@@ -175,8 +181,9 @@ export function useTodos() {
 
     if (!t) return;
 
-    // if marking to done and recurrence exists and autoCreateNext turned on -> create next
-    if (!t.done && t.recurrence && autoCreateNext) {
+    // if marking to done and recurrence exists and creation allowed -> create next
+    const willCreate = createNext === undefined || createNext === null ? autoCreateNext : createNext;
+    if (!t.done && t.recurrence && willCreate) {
       const nextDue = computeNextDue(t);
       if (nextDue) {
         const newTodo: Todo = {
