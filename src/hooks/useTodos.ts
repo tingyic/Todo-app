@@ -38,6 +38,17 @@ function reducer(state: State, action: Action): State {
   }
 }
 
+/**
+ * add expects a payload object:
+ * { text: string, tags?: string[], due?: string | null, priority?: "high"|"medium"|"low" }
+ */
+type AddPayload = {
+  text: string;
+  tags?: string[];
+  due?: string | null;
+  priority?: Todo["priority"];
+};
+
 export function useTodos() {
   const [state, dispatch] = useReducer(reducer, { todos: [] as Todo[] });
 
@@ -50,9 +61,12 @@ export function useTodos() {
         return;
       }
     } catch (e) {
-      console.warn("Failed to load todos:", e);
+      // keep app resilient if localStorage contains invalid JSON
+      // eslint-disable-next-line no-console
+      console.warn("Failed to load todos from localStorage:", e);
     }
 
+    // initial sample if none
     dispatch({
       type: "INIT",
       todos: [
@@ -73,20 +87,41 @@ export function useTodos() {
     try {
       localStorage.setItem(LOCAL_KEY, JSON.stringify(state.todos));
     } catch (e) {
+      // eslint-disable-next-line no-console
       console.warn("Failed to save todos:", e);
     }
   }, [state.todos]);
 
-  const add = (text: string) => {
+  const add = (payload: AddPayload) => {
+    // defensive validation
+    const text = (payload?.text ?? "").toString().trim();
+    if (!text) return;
+
+    const tags = Array.isArray(payload.tags)
+      ? payload.tags.map(t => t?.toString().trim()).filter(Boolean)
+      : [];
+
+    const due = payload.due == null ? null : String(payload.due);
+
+    const validPriorities = ["high", "medium", "low"] as const;
+    const priority = validPriorities.includes(payload.priority as any)
+      ? (payload.priority as Todo["priority"])
+      : "medium";
+
     const todo: Todo = {
       id: uid(),
-      text: text.trim(),
+      text,
       done: false,
       createdAt: Date.now(),
-      due: null,
-      tags: [],
-      priority: "medium",
+      due,
+      tags,
+      priority,
     };
+
+    // Error logging, justin case
+    // eslint-disable-next-line no-console
+    console.log("[useTodos.add] created todo:", todo);
+
     dispatch({ type: "ADD", todo });
   };
 
@@ -104,5 +139,5 @@ export function useTodos() {
     update,
     clearCompleted,
     setAll,
-  };
+  } as const;
 }
