@@ -1,5 +1,6 @@
-import { useEffect, useReducer } from "react";
-import type { Todo } from "../types";
+import { useEffect, useReducer, useState } from "react";
+import type { Todo, Recurrence } from "../types";
+import { parseLocalDateTime } from "../utils/dates";
 
 const LOCAL_KEY = "todoapp:v1";
 
@@ -38,19 +39,63 @@ function reducer(state: State, action: Action): State {
   }
 }
 
-/**
- * add expects a payload object:
- * { text: string, tags?: string[], due?: string | null, priority?: "high"|"medium"|"low" }
- */
+/** compute next due datetime-local string for a todo with recurrence */
+function computeNextDue(todo: Todo): string | null {
+  const rec: Recurrence | undefined = todo.recurrence as Recurrence | undefined;
+  if (!rec) return null;
+
+  // base date-time (use due if present, else createdAt)
+  const base = todo.due ? parseLocalDateTime(todo.due) : new Date(todo.createdAt);
+  if (!base) return null;
+  const next = new Date(base.getTime());
+
+  if (rec.freq === "daily") {
+    const interval = (rec as any).interval ?? 1;
+    next.setDate(next.getDate() + Math.max(1, Number(interval)));
+  } else if (rec.freq === "weekly") {
+    const interval = (rec as any).interval ?? 1;
+    const weekdays = (rec as any).weekdays as number[] | undefined;
+    if (Array.isArray(weekdays) && weekdays.length > 0) {
+      // find the next selected weekday strictly after base (search up to 14 days)
+      for (let i = 1; i <= 14; i++) {
+        const cand = new Date(base.getTime());
+        cand.setDate(base.getDate() + i);
+        if (weekdays.includes(cand.getDay())) {
+          next.setTime(cand.getTime());
+          break;
+        }
+      }
+    } else {
+      next.setDate(next.getDate() + interval * 7);
+    }
+  } else if (rec.freq === "monthly") {
+    const interval = (rec as any).interval ?? 1;
+    const dom = (rec as any).dayOfMonth ?? base.getDate();
+    next.setMonth(next.getMonth() + Math.max(1, Number(interval)));
+    // set day; JS will roll if day exceeds month length
+    next.setDate(dom);
+  }
+
+  const pad = (n: number) => String(n).padStart(2, "0");
+  const yyyy = next.getFullYear();
+  const mm = pad(next.getMonth() + 1);
+  const dd = pad(next.getDate());
+  const hh = pad(next.getHours());
+  const min = pad(next.getMinutes());
+  return `${yyyy}-${mm}-${dd}T${hh}:${min}`;
+}
+
 type AddPayload = {
   text: string;
   tags?: string[];
   due?: string | null;
   priority?: Todo["priority"];
+  recurrence?: Recurrence | null;
 };
 
 export function useTodos() {
   const [state, dispatch] = useReducer(reducer, { todos: [] as Todo[] });
+  const [autoCreateNext, setAutoCreateNext] = useState<boolean>(true);
 
   useEffect(() => {
     try {
@@ -61,12 +106,10 @@ export function useTodos() {
         return;
       }
     } catch (e) {
-      // keep app resilient if localStorage contains invalid JSON
       // eslint-disable-next-line no-console
       console.warn("Failed to load todos from localStorage:", e);
     }
 
-    // initial sample if none
     dispatch({
       type: "INIT",
       todos: [
@@ -93,7 +136,6 @@ export function useTodos() {
   }, [state.todos]);
 
   const add = (payload: AddPayload) => {
-    // defensive validation
     const text = (payload?.text ?? "").toString().trim();
     if (!text) return;
 
@@ -116,16 +158,42 @@ export function useTodos() {
       due,
       tags,
       priority,
+      recurrence: (payload as any).recurrence ?? null,
     };
 
-    // Error logging, justin case
     // eslint-disable-next-line no-console
     console.log("[useTodos.add] created todo:", todo);
 
     dispatch({ type: "ADD", todo });
   };
 
-  const toggle = (id: string) => dispatch({ type: "TOGGLE", id });
+  const toggle = (id: string) => {
+    // find todo
+    const t = state.todos.find(x => x.id === id);
+    // toggle base behaviour
+    dispatch({ type: "TOGGLE", id });
+
+    if (!t) return;
+
+    // if marking to done and recurrence exists and autoCreateNext turned on -> create next
+    if (!t.done && t.recurrence && autoCreateNext) {
+      const nextDue = computeNextDue(t);
+      if (nextDue) {
+        const newTodo: Todo = {
+          id: uid(),
+          text: t.text,
+          done: false,
+          createdAt: Date.now(),
+          due: nextDue,
+          tags: t.tags.slice(),
+          priority: t.priority,
+          recurrence: t.recurrence ? { ...t.recurrence } : null,
+        };
+        dispatch({ type: "ADD", todo: newTodo });
+      }
+    }
+  };
+
   const remove = (id: string) => dispatch({ type: "REMOVE", id });
   const update = (id: string, patch: Partial<Todo>) => dispatch({ type: "UPDATE", id, patch });
   const clearCompleted = () => dispatch({ type: "CLEAR_COMPLETED" });
@@ -139,5 +207,7 @@ export function useTodos() {
     update,
     clearCompleted,
     setAll,
+    autoCreateNext,
+    setAutoCreateNext,
   } as const;
 }

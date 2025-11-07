@@ -1,5 +1,6 @@
 import { useState } from "react";
 import type { Todo, Priority } from "../types";
+import { formatLocalDateTime } from "../utils/dates";
 
 type Props = {
   todo: Todo;
@@ -27,7 +28,6 @@ export default function TodoItem({ todo, onToggle, onRemove, onUpdate }: Props) 
     setEditing(false);
   }
 
-  // root gets class 'todo-done' when completed — CSS will style strikethrough & muted colors
   return (
     <div className={`todo-item ${todo.done ? "todo-done" : ""}`}>
       {/* left column: checkbox */}
@@ -39,10 +39,8 @@ export default function TodoItem({ todo, onToggle, onRemove, onUpdate }: Props) 
       <div className="todo-col-content">
         {!editing ? (
           <>
-            {/* Title — add a priority class so we can color-code it */}
             <div className={`todo-title prio-${todo.priority}`}>{todo.text}</div>
 
-            {/* tags on their own line */}
             <div className="todo-tags" aria-hidden={todo.tags.length === 0}>
               {todo.tags.length ? (
                 todo.tags.map(t => <span key={t} className="tag">#{t}</span>)
@@ -51,24 +49,49 @@ export default function TodoItem({ todo, onToggle, onRemove, onUpdate }: Props) 
               )}
             </div>
 
-            {/* date + priority badge on separate meta line */}
             <div className="todo-meta">
-              <span className="todo-date">{todo.due ? `Due ${todo.due}` : new Date(todo.createdAt).toLocaleDateString()}</span>
+              <span className="todo-date">{todo.due ? formatLocalDateTime(todo.due) : new Date(todo.createdAt).toLocaleString()}</span>
               <span className={`priority-badge prio-${todo.priority}`}>{todo.priority}</span>
             </div>
           </>
         ) : (
           <>
-            <input className="editor-input" value={draft.text} onChange={(e) => setDraft(d => ({ ...d, text: e.target.value }))} />
-            <div style={{ display: "flex", gap: 8, marginTop: 6 }}>
-              <input type="date" className="editor-input" value={draft.due} onChange={(e) => setDraft(d => ({ ...d, due: e.target.value }))} />
-              <input className="editor-input" placeholder="tags: a, b" value={draft.tags} onChange={(e) => setDraft(d => ({ ...d, tags: e.target.value }))} />
-              <select value={draft.priority} onChange={(e) => setDraft(d => ({ ...d, priority: e.target.value as Priority }))} className="editor-input" style={{ width: 120 }}>
+            <input
+              className="editor-input"
+              value={draft.text}
+              onChange={(e) => setDraft(d => ({ ...d, text: e.target.value }))}
+            />
+
+            <div style={{ display: "flex", gap: 8, marginTop: 6, flexWrap: "wrap" }}>
+              {/* datetime-local for editing due (supports both date + time) */}
+              <input
+                type="datetime-local"
+                className="editor-input"
+                value={draft.due}
+                onChange={(e) => setDraft(d => ({ ...d, due: e.target.value }))}
+                style={{ minWidth: 200 }}
+              />
+
+              <input
+                className="editor-input"
+                placeholder="tags: a, b"
+                value={draft.tags}
+                onChange={(e) => setDraft(d => ({ ...d, tags: e.target.value }))}
+                style={{ minWidth: 150 }}
+              />
+
+              <select
+                value={draft.priority}
+                onChange={(e) => setDraft(d => ({ ...d, priority: e.target.value as Priority }))}
+                className="editor-input"
+                style={{ width: 120 }}
+              >
                 <option value="high">High</option>
                 <option value="medium">Medium</option>
                 <option value="low">Low</option>
               </select>
             </div>
+
             <div style={{ marginTop: 8 }}>
               <button onClick={save} className="btn-plain">Save</button>
               <button onClick={() => setEditing(false)} className="btn-plain" style={{ marginLeft: 8 }}>Cancel</button>
@@ -81,7 +104,20 @@ export default function TodoItem({ todo, onToggle, onRemove, onUpdate }: Props) 
       <div className="todo-col-actions">
         {!editing ? (
           <>
-            <button className="btn-plain" onClick={() => { setEditing(true); setDraft({ text: todo.text, due: todo.due ?? "", tags: todo.tags.join(", "), priority: todo.priority }); }}>Edit</button>
+            <button
+              className="btn-plain"
+              onClick={() => {
+                setEditing(true);
+                setDraft({
+                  text: todo.text,
+                  due: todo.due ?? "",
+                  tags: todo.tags.join(", "),
+                  priority: todo.priority,
+                });
+              }}
+            >
+              Edit
+            </button>
             <button className="btn-danger" onClick={() => onRemove(todo.id)}>Delete</button>
           </>
         ) : null}
