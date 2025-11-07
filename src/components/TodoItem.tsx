@@ -27,47 +27,64 @@ export default function TodoItem({ todo, onToggle, onRemove, onUpdate }: Props) 
     setEditing(false);
   }
 
+  // root gets class 'todo-done' when completed — CSS will style strikethrough & muted colors
   return (
-    <div className="p-3 rounded-lg border bg-slate-50 flex gap-3 items-start">
-      <input type="checkbox" checked={todo.done} onChange={() => onToggle(todo.id)} />
-      <div className="flex-1">
+    <div className={`todo-item ${todo.done ? "todo-done" : ""}`}>
+      {/* left column: checkbox */}
+      <div className="todo-col-checkbox">
+        <input aria-label="Toggle todo" type="checkbox" checked={todo.done} onChange={() => onToggle(todo.id)} />
+      </div>
+
+      {/* main content */}
+      <div className="todo-col-content">
         {!editing ? (
           <>
-            <div className={`text-sm ${todo.done ? "line-through text-slate-400" : "text-slate-800"}`}>
-              {todo.text}
+            {/* Title — add a priority class so we can color-code it */}
+            <div className={`todo-title prio-${todo.priority}`}>{todo.text}</div>
+
+            {/* tags on their own line */}
+            <div className="todo-tags" aria-hidden={todo.tags.length === 0}>
+              {todo.tags.length ? (
+                todo.tags.map(t => <span key={t} className="tag">#{t}</span>)
+              ) : (
+                <span className="no-tags">no tags</span>
+              )}
             </div>
-            <div className="text-xs text-slate-500 mt-1 flex gap-2 flex-wrap">
-              {todo.tags.length ? todo.tags.map(t => <span key={t} className="px-2 py-0.5 rounded-full border">#{t}</span>) : <span className="text-slate-400">no tags</span>}
-              <span>{todo.due ? `Due ${todo.due}` : new Date(todo.createdAt).toLocaleDateString()}</span>
+
+            {/* date + priority badge on separate meta line */}
+            <div className="todo-meta">
+              <span className="todo-date">{todo.due ? `Due ${todo.due}` : new Date(todo.createdAt).toLocaleDateString()}</span>
+              <span className={`priority-badge prio-${todo.priority}`}>{todo.priority}</span>
             </div>
           </>
         ) : (
-          <div className="flex flex-col gap-2">
-            <input className="rounded-md border p-1" value={draft.text} onChange={(e) => setDraft(d => ({ ...d, text: e.target.value }))} />
-            <div className="flex gap-2">
-              <input type="date" className="rounded-md border p-1" value={draft.due} onChange={(e) => setDraft(d => ({ ...d, due: e.target.value }))} />
-              <input placeholder="tags: a, b" className="rounded-md border p-1 flex-1" value={draft.tags} onChange={(e) => setDraft(d => ({ ...d, tags: e.target.value }))} />
-              <select value={draft.priority} onChange={(e) => setDraft(d => ({ ...d, priority: e.target.value as Priority }))} className="rounded-md border p-1">
+          <>
+            <input className="editor-input" value={draft.text} onChange={(e) => setDraft(d => ({ ...d, text: e.target.value }))} />
+            <div style={{ display: "flex", gap: 8, marginTop: 6 }}>
+              <input type="date" className="editor-input" value={draft.due} onChange={(e) => setDraft(d => ({ ...d, due: e.target.value }))} />
+              <input className="editor-input" placeholder="tags: a, b" value={draft.tags} onChange={(e) => setDraft(d => ({ ...d, tags: e.target.value }))} />
+              <select value={draft.priority} onChange={(e) => setDraft(d => ({ ...d, priority: e.target.value as Priority }))} className="editor-input" style={{ width: 120 }}>
                 <option value="high">High</option>
                 <option value="medium">Medium</option>
                 <option value="low">Low</option>
               </select>
             </div>
-          </div>
+            <div style={{ marginTop: 8 }}>
+              <button onClick={save} className="btn-plain">Save</button>
+              <button onClick={() => setEditing(false)} className="btn-plain" style={{ marginLeft: 8 }}>Cancel</button>
+            </div>
+          </>
         )}
       </div>
-      <div className="flex flex-col gap-2 items-end">
-        {editing ? (
+
+      {/* actions column */}
+      <div className="todo-col-actions">
+        {!editing ? (
           <>
-            <button onClick={save} className="px-3 py-1 rounded bg-slate-800 text-white">Save</button>
-            <button onClick={() => setEditing(false)} className="px-3 py-1 rounded border">Cancel</button>
+            <button className="btn-plain" onClick={() => { setEditing(true); setDraft({ text: todo.text, due: todo.due ?? "", tags: todo.tags.join(", "), priority: todo.priority }); }}>Edit</button>
+            <button className="btn-danger" onClick={() => onRemove(todo.id)}>Delete</button>
           </>
-        ) : (
-          <>
-            <button onClick={() => { setEditing(true); setDraft({ text: todo.text, due: todo.due ?? "", tags: todo.tags.join(", "), priority: todo.priority }); }} className="text-sm underline">Edit</button>
-            <button onClick={() => onRemove(todo.id)} className="text-sm text-red-600">Delete</button>
-          </>
-        )}
+        ) : null}
       </div>
     </div>
   );

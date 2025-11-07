@@ -155,3 +155,85 @@
   color: #b91c1c;
   font-size: 13px;
 }
+
+.todo-tags {
+  margin-top: 8px;       /* ensures tags are visually separate from title */
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.todo-meta {
+  margin-top: 8px;       /* ensures date/priority are on a separate line */
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  font-size: 12px;
+  color: #6b7280;
+}
+
+/* Priority badge */
+.priority-badge {
+  padding: 4px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  text-transform: capitalize;
+  border: 1px solid transparent;
+}
+
+/* Colour-code the title and badge by priority */
+.prio-high.todo-title,
+.todo-title.prio-high {
+  color: #b91c1c; /* red */
+}
+.priority-badge.prio-high {
+  background: #fff1f0;
+  border-color: #fecaca;
+  color: #b91c1c;
+}
+
+.prio-medium.todo-title,
+.todo-title.prio-medium {
+  color: #d97706; /* amber/yellow */
+}
+.priority-badge.prio-medium {
+  background: #fff7ed;
+  border-color: #fde68a;
+  color: #92400e;
+}
+
+.prio-low.todo-title,
+.todo-title.prio-low {
+  color: #059669; /* green */
+}
+.priority-badge.prio-low {
+  background: #ecfdf5;
+  border-color: #bbf7d0;
+  color: #065f46;
+}
+
+/* Strikethrough/muted when done — applies to whole item */
+.todo-item.todo-done {
+  opacity: 0.75;
+}
+.todo-item.todo-done .todo-title,
+.todo-item.todo-done .tag,
+.todo-item.todo-done .todo-meta,
+.todo-item.todo-done .priority-badge {
+  text-decoration: line-through;
+  color: #9ca3af !important;
+  border-color: #f0f0f0 !important;
+  background: transparent !important;
+}
+
+/* ensure tags visually separate from date line */
+.todo-tags .tag { 
+  background: #fff; 
+  border: 1px solid #e6eef8; 
+  padding: 4px 8px; 
+  border-radius: 999px; 
+  font-size: 12px;
+}
+
+/* small tweak: title weight and wrap */
+.todo-title { font-weight: 600; word-break: break-word; }
