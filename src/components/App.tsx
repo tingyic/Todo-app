@@ -45,7 +45,7 @@ export default function App() {
     <div className="min-h-screen bg-gradient-to-br from-slate-50 to-white flex items-start justify-center py-12 px-4">
       <div className="w-full max-w-3xl bg-white rounded-2xl shadow-lg p-6">
         <header className="flex items-center justify-between mb-4">
-          <h1 className="text-2xl font-semibold">Todo</h1>
+          <h1 className="text-2xl font-semibold">todo or not todo?</h1>
           <div className="text-sm text-slate-500">{stats.remaining} left • {stats.done} done</div>
         </header>
 
@@ -70,7 +70,7 @@ export default function App() {
         <footer className="mt-6 flex items-center justify-between text-sm text-slate-500">
           <div>{stats.total} items</div>
           <div> Have a nice day :)</div>
-          <div>Made by Ting Yi</div>
+          <div>Made by ting</div>
         </footer>
       </div>
     </div>

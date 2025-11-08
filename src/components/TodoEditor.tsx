@@ -1,4 +1,4 @@
-import { useState, type ChangeEvent } from "react";
+import { useState } from "react";
 import type { Recurrence } from "../types";
 
 type Props = {
@@ -32,11 +32,20 @@ export default function TodoEditor({ onAdd }: Props) {
     const t = text.trim();
     if (!t) return;
     const tagsArr = tags.split(",").map(s => s.trim()).filter(Boolean);
-    let recurrence = null as Recurrence | null;
+    let recurrence: Recurrence | null = null;
+
     if (isRecurring) {
-      if (freq === "daily") recurrence = { freq: "daily", interval: Math.max(1, Math.floor(interval)) };
-      else if (freq === "weekly") recurrence = { freq: "weekly", interval: Math.max(1, Math.floor(interval)), weekdays: weekdays.length ? weekdays : undefined };
-      else if (freq === "monthly") recurrence = { freq: "monthly", interval: Math.max(1, Math.floor(interval)), dayOfMonth: undefined };
+      if (freq === "daily") {
+        recurrence = { freq: "daily", interval: Math.max(1, Math.floor(interval)) };
+      } else if (freq === "weekly") {
+        recurrence = {
+          freq: "weekly",
+          interval: Math.max(1, Math.floor(interval)),
+          weekdays: weekdays.length ? weekdays : undefined,
+        };
+      } else if (freq === "monthly") {
+        recurrence = { freq: "monthly", interval: Math.max(1, Math.floor(interval)), dayOfMonth: undefined };
+      }
     }
 
     onAdd({
@@ -47,6 +56,7 @@ export default function TodoEditor({ onAdd }: Props) {
       recurrence,
     });
 
+    // reset
     setText("");
     setTags("");
     setDue("");
@@ -62,7 +72,7 @@ export default function TodoEditor({ onAdd }: Props) {
       <input
         value={text}
         onChange={(e) => setText(e.target.value)}
-        placeholder="What needs doing? (Enter to add)"
+        placeholder="Let's get this bread (Enter to add)"
         className="editor-input"
         style={{ flex: 1, minWidth: 200 }}
         autoFocus
@@ -96,22 +106,34 @@ export default function TodoEditor({ onAdd }: Props) {
       </label>
 
       {isRecurring && (
-        <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+        <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
           <select value={freq} onChange={(e) => setFreq(e.target.value as any)} className="editor-input" style={{ width: 120 }}>
             <option value="daily">Daily</option>
             <option value="weekly">Weekly</option>
             <option value="monthly">Monthly</option>
           </select>
-          <input className="editor-input" style={{ width: 80 }} type="number" min={1} value={interval} onChange={(e) => setInterval(parseInt(e.target.value || "1", 10))} />
+
+          <input
+            className="editor-input"
+            style={{ width: 80 }}
+            type="number"
+            min={1}
+            value={interval}
+            onChange={(e) => setInterval(parseInt(e.target.value || "1", 10))}
+          />
+
           {freq === "weekly" && (
             <div style={{ display: "flex", gap: 6 }}>
-              {["S","M","T","W","T","F","S"].map((label, i) => (
+              {["S", "M", "T", "W", "T", "F", "S"].map((label, i) => (
                 <button
                   key={i}
                   type="button"
                   onClick={() => toggleWeekday(i)}
                   className="btn-plain"
-                  style={{ padding: "6px 8px", background: weekdays.includes(i) ? "#eef" : undefined }}
+                  style={{
+                    padding: "6px 8px",
+                    background: weekdays.includes(i) ? "#eef" : undefined,
+                  }}
                 >
                   {label}
                 </button>
