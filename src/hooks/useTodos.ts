@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import { useEffect, useReducer, useState } from "react";
 import type { Todo, Recurrence } from "../types";
 import { parseLocalDateTime } from "../utils/dates";
@@ -106,7 +107,6 @@ export function useTodos() {
         return;
       }
     } catch (e) {
-      // eslint-disable-next-line no-console
       console.warn("Failed to load todos from localStorage:", e);
     }
 
@@ -115,7 +115,7 @@ export function useTodos() {
       todos: [
         {
           id: uid(),
-          text: "Welcome — add your first todo",
+          text: "Welcome! To get started with your todo app, just add stuff! :)",
           done: false,
           createdAt: Date.now(),
           due: null,
@@ -130,7 +130,6 @@ export function useTodos() {
     try {
       localStorage.setItem(LOCAL_KEY, JSON.stringify(state.todos));
     } catch (e) {
-      // eslint-disable-next-line no-console
       console.warn("Failed to save todos:", e);
     }
   }, [state.todos]);
@@ -161,7 +160,6 @@ export function useTodos() {
       recurrence: (payload as any).recurrence ?? null,
     };
 
-    // eslint-disable-next-line no-console
     console.log("[useTodos.add] created todo:", todo);
 
     dispatch({ type: "ADD", todo });

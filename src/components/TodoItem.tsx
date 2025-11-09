@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import { useState } from "react";
 import type { Todo, Priority, Recurrence } from "../types";
 import { formatLocalDateTime } from "../utils/dates";

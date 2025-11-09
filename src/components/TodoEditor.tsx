@@ -101,7 +101,7 @@ export default function TodoEditor({ onAdd }: Props) {
       </select>
 
       <label style={{ display: "flex", alignItems: "center", gap: 6 }}>
-        <input type="checkbox" checked={isRecurring} onChange={(e) => setIsRecurring(e.target.checked)} />
+        <input type="checkbox" className="app-checkbox" checked={isRecurring} onChange={(e) => setIsRecurring(e.target.checked)} aria-label="Recurring"/>
         Recurring
       </label>
 

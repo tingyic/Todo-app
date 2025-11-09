@@ -1,354 +1,358 @@
-#root {
-  max-width: 1280px;
-  margin: 0 auto;
-  padding: 2rem;
-  text-align: center;
+:root{
+  --app-bg: #f7efe6;
+  --app-root-bg: linear-gradient(180deg,#f7efe6 0%,#fffdf9 100%);
+  --app-text: #0f172a;
+  --app-muted: #6b7280;
+  --app-card: #fffaf5;
+  --app-border: #efe6dc;
+
+  --app-input-bg: #fffaf5;
+  --app-input-border: #efe6dc;
+
+  --btn-bg: #ffffff;
+  --btn-text: #111827;
+
+  --btn-plain-bg: #fff6f0;
+  --btn-plain-border: #efe6dc;
+
+  --tag-bg: #fff8f3;
+  --tag-border: #efe6dc;
+
+  /* priorities - light mode darker shades for readability */
+  --prio-high: #9b1c1c;
+  --prio-high-bg: #fff3f3;
+  --prio-medium: #8a4b0e;
+  --prio-medium-bg: #fff8e6;
+  --prio-low: #05603a;
+  --prio-low-bg: #f0fff8;
 }
 
-.logo {
-  height: 6em;
-  padding: 1.5em;
-  will-change: filter;
-  transition: filter 300ms;
-}
-.logo:hover {
-  filter: drop-shadow(0 0 2em #646cffaa);
-}
-.logo.react:hover {
-  filter: drop-shadow(0 0 2em #61dafbaa);
+.theme-dark{
+  --app-bg: #0b1220;
+  --app-root-bg: linear-gradient(180deg,#071025 0%,#071025 100%);
+  --app-text: #e6eef8;
+  --app-muted: #94a3b8;
+  --app-card: #0b1220;
+  --app-border: #1f2a37;
+
+  --app-input-bg: #071025;
+  --app-input-border: #203040;
+
+  --btn-bg: #0f1724;
+  --btn-text: #f8fafc;
+
+  --btn-plain-bg: #071025;
+  --btn-plain-border: #203040;
+
+  --tag-bg: #071025;
+  --tag-border: #203040;
+
+  --prio-high: #ff7b7b;
+  --prio-high-bg: #3a0f12;
+  --prio-medium: #ffb86b;
+  --prio-medium-bg: #33210a;
+  --prio-low: #7be3a6;
+  --prio-low-bg: #083222;
 }
 
-/* Keep the rotating logo animation if present */
-@keyframes logo-spin {
-  from { transform: rotate(0deg); }
-  to   { transform: rotate(360deg); }
+/* =========================
+   Generic mappings
+   ========================= */
+
+body { background: var(--app-bg); color: var(--app-text); }
+
+.bg-app-root { background: var(--app-root-bg); }
+.bg-app-card { background: var(--app-card); border: 1px solid var(--app-border); }
+.text-app-muted { color: var(--app-muted); }
+
+/* unify inputs/buttons/tags so they follow theme */
+.editor-input,
+input[type="text"],
+input[type="date"],
+input[type="datetime-local"],
+input[type="search"],
+textarea,
+select {
+  background: var(--app-input-bg);
+  border: 1px solid var(--app-input-border);
+  color: var(--app-text);
+  box-sizing: border-box;
 }
-@media (prefers-reduced-motion: no-preference) {
-  a:nth-of-type(2) .logo { animation: logo-spin infinite 20s linear; }
+
+.editor-input::placeholder,
+input::placeholder,
+.search-input::placeholder {
+  color: var(--app-muted);
+  opacity: 1;
 }
 
-/* small utilities from original */
-.card { padding: 2em; }
-.read-the-docs { color: #888; }
+/* primary add button */
+.editor-btn,
+button.editor-btn {
+  padding: 8px 12px;
+  border-radius: 8px;
+  background: var(--btn-bg);
+  color: var(--btn-text);
+  border: 1px solid var(--btn-border);
+  cursor: pointer;
+}
 
-/* ============================
-   Todo app layout
-   grid with three columns: checkbox | content | actions
-   ============================ */
+/* plain small buttons used for toolbar/edit */
+.btn-plain,
+button.btn-plain {
+  padding: 6px 8px;
+  border-radius: 8px;
+  background: var(--btn-plain-bg);
+  color: var(--app-text);
+  border: 1px solid var(--btn-plain-border);
+  cursor: pointer;
+}
 
-.todo-item {
+/* danger buttons */
+.btn-danger,
+button.btn-danger {
+  padding: 6px 8px;
+  border-radius: 8px;
+  background: var(--btn-plain-bg);
+  color: var(--btn-text);
+  border: 1px solid rgba(185,28,28,0.12);
+  cursor: pointer;
+}
+
+/* =========================
+   Layout: todo item row
+   ========================= */
+
+.todo-item{
   display: grid;
-  grid-template-columns: 48px 1fr 96px; /* checkbox | content | actions */
+  grid-template-columns: 48px 1fr 96px;
   gap: 12px;
   align-items: start;
   padding: 12px;
   border-radius: 10px;
-  background: #fbfdff;
-  border: 1px solid #eef2f7;
+  background: var(--app-card);
+  border: 1px solid var(--app-border);
   width: 100%;
   box-sizing: border-box;
-  overflow: hidden; /* avoid horizontal overflow from long content */
+  overflow: hidden;
 }
 
 /* checkbox column */
-.todo-col-checkbox {
-  display: flex;
-  align-items: flex-start;
-  justify-content: center;
-  padding-top: 6px;
+.todo-col-checkbox{ display:flex; align-items:flex-start; justify-content:center; padding-top:6px; }
+
+/* content column: allow shrink */
+.todo-col-content{ min-width: 0; }
+
+/* title */
+.todo-title{
+  font-size:14px;
+  font-weight:600;
+  margin:0;
+  word-break:break-word;
+  overflow-wrap:anywhere;
+  white-space:normal;
+  color: var(--app-text);
 }
 
-/* content column must be able to shrink; prevents grid overflow */
-.todo-col-content { min-width: 0; }
+/* tags */
+.todo-tags{ margin-top:8px; display:flex; gap:8px; flex-wrap:wrap; }
+.tag{
+  padding:4px 8px;
+  border-radius:999px;
+  border:1px solid var(--tag-border);
+  background:var(--tag-bg);
+  font-size:12px;
+  color:var(--app-text);
+}
+.no-tags{ font-size:12px; color:var(--app-muted); }
 
-/* Title: wrap long words, be allowed multi-line */
-.todo-title {
-  font-size: 14px;
-  font-weight: 600;
-  margin: 0;
-  word-break: break-word;      /* breaks long words */
-  overflow-wrap: anywhere;     /* robust wrapping */
-  white-space: normal;
-  color: #0f172a;
+/* meta: date + priority badge */
+.todo-meta{ margin-top:8px; display:flex; gap:12px; align-items:center; font-size:12px; color:var(--app-muted); flex-wrap:wrap; }
+.todo-date{ display:inline-block; color:var(--app-muted); }
+
+/* priority badge base */
+.priority-badge{
+  padding:3px 8px;
+  border-radius:999px;
+  font-size:11px;
+  text-transform:capitalize;
+  border:1px solid transparent;
+  display:inline-block;
+  margin-left:6px;
+  color:var(--app-text);
 }
 
-/* tags line */
-.todo-tags {
-  margin-top: 8px; 
-  display: flex;
-  gap: 8px;
-  flex-wrap: wrap;
-}
+/* priority colors via variables */
+.priority-badge.prio-high{ color:var(--prio-high); background:var(--prio-high-bg); border-color:transparent; }
+.priority-badge.prio-medium{ color:var(--prio-medium); background:var(--prio-medium-bg); border-color:transparent; }
+.priority-badge.prio-low{ color:var(--prio-low); background:var(--prio-low-bg); border-color:transparent; }
 
-/* tag pill */
-.tag {
-  padding: 4px 8px;
-  border-radius: 999px;
-  border: 1px solid #e6eef8;
-  background: #fff;
-  font-size: 12px;
-  color: inherit; /* inherits title color or muted color when done */
-}
+/* also title color variant for priority */
+.todo-title.prio-high{ color:var(--prio-high); }
+.todo-title.prio-medium{ color:var(--prio-medium); }
+.todo-title.prio-low{ color:var(--prio-low); }
 
-/* default "no tags" text */
-.no-tags { font-size: 12px; color: #9ca3af; }
+/* actions column */
+.todo-col-actions{ display:flex; flex-direction:column; align-items:flex-end; gap:8px; }
 
-/* meta line (date + priority badge) on its own line */
-.todo-meta {
-  margin-top: 8px;
-  display: flex;
-  gap: 12px;
-  align-items: center;
-  font-size: 12px;
-  color: #6b7280;
-  flex-wrap: wrap;
-}
-.todo-date { display: inline-block; }
+/* editing inputs area */
+.editor-input{ padding:8px; border-radius:8px; font-size:13px; }
 
-/* priority badge */
-.priority-badge {
-  padding: 3px 8px;
-  border-radius: 999px;
-  font-size: 11px;
-  text-transform: capitalize;
-  border: 1px solid transparent;
-  display: inline-block;
-  margin-left: 6px; /* small separation from date */
-}
+/* =========================
+   Done state
+   ========================= */
 
-/* actions column (edit/delete) */
-.todo-col-actions {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-end;
-  gap: 8px;
-}
-
-/* input & editor utilities */
-.editor-input {
-  padding: 8px;
-  border-radius: 8px;
-  border: 1px solid #e6eef8;
-  background: #fff;
-  font-size: 13px;
-  box-sizing: border-box;
-}
-
-.editor-btn {
-  padding: 8px 12px;
-  border-radius: 8px;
-  background: #111827;
-  color: #fff;
-  border: none;
-}
-
-/* small buttons */
-.btn-plain {
-  padding: 6px 8px;
-  border-radius: 8px;
-  border: 1px solid #eef2f7;
-  background: #fff;
-  font-size: 13px;
-}
-.btn-danger {
-  padding: 6px 8px;
-  border-radius: 8px;
-  border: 1px solid #fdecea;
-  background: #fff7f6;
-  color: #b91c1c;
-  font-size: 13px;
-}
-
-/* ============================
-   Priority colour rules (title + badge)
-   Use !important to beat possible global overrides (keeps contrast)
-   ============================ */
-
-/* High (red) */
-.todo-title.prio-high,
-.prio-high.todo-title {
-  color: #b91c1c !important;
-}
-.priority-badge.prio-high {
-  background: #fff1f0;
-  border-color: #fecaca;
-  color: #b91c1c !important;
-}
-
-/* Medium (amber) */
-.todo-title.prio-medium,
-.prio-medium.todo-title {
-  color: #b45309 !important; /* darker amber for readability */
-}
-.priority-badge.prio-medium {
-  background: #fffbeb;
-  border-color: #fde68a;
-  color: #92400e !important;
-}
-
-/* Low (green) */
-.todo-title.prio-low,
-.prio-low.todo-title {
-  color: #027a48 !important;
-}
-.priority-badge.prio-low {
-  background: #ecfdf5;
-  border-color: #bbf7d0;
-  color: #065f46 !important;
-}
-
-/* ============================
-   Done state: strike & mute whole item
-   Use strong specificity so it overrides other color rules
-   ============================ */
-
-.todo-item.todo-done { opacity: 0.95; }
-
+.todo-item.todo-done{ opacity:0.95; }
 .todo-item.todo-done .todo-title,
 .todo-item.todo-done .tag,
 .todo-item.todo-done .todo-meta,
 .todo-item.todo-done .priority-badge,
 .todo-item.todo-done .todo-date {
-  color: #9ca3af !important;
-  text-decoration: line-through !important;
-  background: transparent !important;
-  border-color: #f0f0f0 !important;
+  color: var(--app-muted);
+  text-decoration: line-through;
+  background: transparent;
+  border-color: transparent;
 }
 
 /* ensure tag background doesn't clash while struck-through */
-.todo-item.todo-done .tag { background: transparent !important; border-color: transparent !important; }
+.todo-item.todo-done .tag{ background: transparent; border-color: transparent; }
 
-/* ============================
-   Small responsive tweaks
-   ============================ */
+/* =========================
+   Toolbar / Search / Filters
+   Cover common selector patterns so they flip
+   ========================= */
 
-@media (prefers-color-scheme: dark) {
-  /* page background and base text are already dark from your index.css;
-     here we give components dark backgrounds and high-contrast text. */
+.toolbar, .header-toolbar{ display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
 
-  /* Card / todo row */
-  .todo-item {
-    background: #0b1220;          /* dark card */
-    border-color: #1f2a37;
-    color: #e6eef8;
-  }
+input[type="search"],
+.search-input,
+.input-search,
+.toolbar .search,
+.header .search-input {
+  background: var(--app-input-bg);
+  border: 1px solid var(--app-input-border);
+  color: var(--app-text);
+  caret-color: var(--app-text);
+  padding: 8px;
+  border-radius: 8px;
+}
 
-  /* Left column checkbox — keep it visible */
-  .todo-col-checkbox input[type="checkbox"] {
-    accent-color: #7dd3fc; /* light-ish accent for checkbox */
-  }
+/* small hover tweak */
+.btn-plain:hover, .toolbar button:hover { filter: brightness(0.98); }
 
-  /* Content column text color */
-  .todo-col-content,
-  .todo-col-content * {
-    color: #e6eef8;
-  }
+/* =========================
+   Utility / small rules
+   ========================= */
 
-  /* Title color: default when no priority class */
-  .todo-title { color: #eef2f7 !important; }
+.logo{ height:6em; padding:1.5em; will-change:filter; transition:filter 300ms; }
+.logo:hover{ filter: drop-shadow(0 0 2em #646cffaa); }
+.logo.react:hover{ filter: drop-shadow(0 0 2em #61dafbaa); }
 
-  /* Tags: dark pill with visible text */
-  .tag {
-    background: #071025;
-    border-color: #203040;
-    color: #e6eef8;
-  }
-  .no-tags { color: #94a3b8; }
+.card{ padding:2em; }
+.read-the-docs{ color:#888; }
 
-  /* Inputs in the editor / edit form */
-  .editor-input {
-    background: #071025;
-    border-color: #203040;
-    color: #e6eef8;
-  }
-  .editor-input::placeholder {
-    color: #94a3b8;
-    opacity: 1;
-  }
+/* remove bullets from the list */
+ul.todo-list{ list-style:none; padding-left:0; margin:0; }
+ul.todo-list li{ list-style:none; }
 
-  /* Editor add button */
-  .editor-btn {
-    background: #0f1724;
-    color: #f8fafc;
-    border-color: #253040;
-  }
+/* Responsive behavior: keep wrapping consistent */
+.todo-title{ word-break: break-word; overflow-wrap: anywhere; }
 
-  /* Small buttons (edit/delete etc) */
-  .btn-plain {
-    background: #071025;
-    color: #e6eef8;
-    border-color: #203040;
-  }
-  .btn-plain:hover { background: #0f2130; }
 
-  .btn-danger {
-    background: #2a0a0a;
-    color: #ffd6d6;
-    border-color: #4a1515;
-  }
+/* Ensure priority badges keep their color backgrounds */
+.priority-badge.prio-high { background: var(--prio-high-bg); color: var(--prio-high); }
+.priority-badge.prio-medium { background: var(--prio-medium-bg); color: var(--prio-medium); }
+.priority-badge.prio-low { background: var(--prio-low-bg); color: var(--prio-low); }
 
-  /* Priority badges: keep the color tint but adapt background/text for dark */
-  .priority-badge.prio-high {
-    background: #3a0f12; border-color: #5a1b1b; color: #ffb4b4 !important;
-  }
-  .priority-badge.prio-medium {
-    background: #33210a; border-color: #5a4510; color: #ffd8a8 !important;
-  }
-  .priority-badge.prio-low {
-    background: #083222; border-color: #134b31; color: #bff3d9 !important;
-  }
+@media (prefers-color-scheme: dark){
+  /* nothing required: variables already handle dark mode */
+}
 
-  /* Also keep title priority colouring visible in dark mode (override if needed) */
-  .todo-title.prio-high { color: #ff7b7b !important; }
-  .todo-title.prio-medium { color: #ffb86b !important; }
-  .todo-title.prio-low { color: #7be3a6 !important; }
+/* Higher-specificity selectors to beat a plain `button { ... }` rule */
+.bg-app-card button,
+.todo-item button,
+.toolbar button,
+.header-toolbar button,
+.todo-col-actions button,
+footer button,
+div.toolbar > button,
+button.btn-plain,
+button.btn-danger,
+button.editor-btn,
+button.filter,
+button.clear-completed,
+button.mark-all,
+button.mark-all-true,
+button.mark-all-false,
+button.button--filter,
+button.button-filter {
+  background: var(--btn-plain-bg);
+  color: var(--app-text);
+  border: 1px solid var(--btn-plain-border);
+  box-shadow: none;
+}
 
-  /* Edit form action buttons (Save / Cancel) */
-  .todo-col-actions .btn-plain,
-  .todo-col-actions .btn-danger {
-    background: #071025;
-    color: #e6eef8;
-    border-color: #203040;
-  }
+/* Delete button: same base as plain but readable in light mode (red hint) */
+button.btn-danger,
+.btn-danger {
+  background: var(--btn-plain-bg);
+  color: #9b1c1c;
+  border: 1px solid rgba(185,28,28,0.18);
+}
 
-  /* When editing, the input/select should also be visible */
-  .todo-item input[type="date"],
-  .todo-item select,
-  .todo-item input[type="text"] {
-    background: #071025;
-    color: #e6eef8;
-    border-color: #203040;
-  }
-  .todo-item select option { background: #071025; color: #e6eef8; }
+input[type="checkbox"] {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 18px;
+  height: 18px;
+  border-radius: 4px;
+  border: 1px solid var(--app-border);
+  background: var(--app-input-bg);
+  display: inline-block;
+  position: relative;
+  cursor: pointer;
+  vertical-align: middle;
+  box-sizing: border-box;
+}
 
-  /* Done state in dark mode: slightly lighter text + strike */
-  .todo-item.todo-done,
-  .todo-item.todo-done * {
-    color: #9aa6b2 !important;
-    text-decoration: line-through !important;
-    opacity: 0.9;
-  }
+/* draw a check mark using pseudo element*/
+input[type="checkbox"]::after {
+  content: "";
+  position: absolute;
+  left: 4px;
+  top: 1px;
+  width: 6px;
+  height: 10px;
+  border: solid var(--btn-text);
+  border-width: 0 2px 2px 0;
+  transform: rotate(45deg);
+  opacity: 0;
+  transition: opacity 120ms ease;
+}
 
-  /* ensure priority badges for done items also look muted */
-  .todo-item.todo-done .priority-badge {
-    background: transparent !important;
-    border-color: transparent !important;
-    color: #9aa6b2 !important;
-  }
+input[type="checkbox"]:checked::after { opacity: 1; }
 
-  /* Ensure long content still wraps the same in dark mode */
-  .todo-title { word-break: break-word; overflow-wrap: anywhere; }
 
-  /* Slight focus ring for accessibility */
-  .editor-input:focus, .btn-plain:focus, .editor-btn:focus, .editor-input:focus-visible {
-    outline: 2px solid rgba(125,211,252,0.12);
-    box-shadow: 0 0 0 3px rgba(125,211,252,0.06);
-  }
-
-  /*removing bullet point from initial app launch style*/
-  .todo-list {
-    list-style: none;
-    padding-left: 0;
-    margin: 0;
-  }
+.bg-app-root .toolbar input,
+.bg-app-root .header-toolbar input,
+.bg-app-root input.rounded-md.border,
+.bg-app-root input.rounded-md,
+.bg-app-root input.p-1,
+.bg-app-root input.px-2,
+.bg-app-root input.text-sm,
+.toolbar input,
+.header-toolbar input,
+input.rounded-md.border,
+input.rounded-md,
+input.p-1,
+input.px-2,
+input.text-sm,
+input[type="search"] {
+  background: var(--app-input-bg) !important;
+  border: 1px solid var(--app-input-border) !important;
+  color: var(--app-text) !important;
+  caret-color: var(--app-text) !important;
+  padding: 8px !important;
+  border-radius: 8px !important;
+  box-sizing: border-box !important;
 }

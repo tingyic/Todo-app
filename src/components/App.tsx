@@ -1,15 +1,34 @@
-import { useMemo, useState } from "react";
+/* eslint-disable @typescript-eslint/no-unused-vars */
+import { useMemo, useState, useEffect } from "react";
 import { useTodos } from "../hooks/useTodos";
 import TodoEditor from "./TodoEditor";
 import TodoList from "./TodoList";
 import Toolbar from "./Toolbar";
 
 export default function App() {
-  const { todos, add, toggle, remove, update, clearCompleted, setAll } = useTodos();
+  const { todos, add, toggle, remove, update, clearCompleted, setAll, autoCreateNext, setAutoCreateNext } = useTodos();
 
   const [filter, setFilter] = useState<"all" | "active" | "completed">("all");
   const [query, setQuery] = useState("");
   const [sortBy, setSortBy] = useState<"created" | "due" | "priority">("created");
+
+  // THEME: light | dark
+  const [theme, setTheme] = useState<"light" | "dark">(() => {
+    try {
+      return (localStorage.getItem("todo-theme") as "light" | "dark") ?? "light";
+    } catch {
+      return "light";
+    }
+  });
+
+  useEffect(() => {
+    // apply class on <html> so CSS can target .theme-dark
+    const root = document.documentElement;
+    if (theme === "dark") root.classList.add("theme-dark");
+    else root.classList.remove("theme-dark");
+
+    try { localStorage.setItem("todo-theme", theme); } catch { /* empty */ }
+  }, [theme]);
 
   const stats = useMemo(() => {
     const total = todos.length;
@@ -42,16 +61,29 @@ export default function App() {
   }, [todos, filter, query, sortBy]);
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 to-white flex items-start justify-center py-12 px-4">
-      <div className="w-full max-w-3xl bg-white rounded-2xl shadow-lg p-6">
+    <div className="min-h-screen bg-app-root flex items-start justify-center py-12 px-4">
+      <div className="w-full max-w-3xl bg-app-card rounded-2xl shadow-lg p-6">
         <header className="flex items-center justify-between mb-4">
           <h1 className="text-2xl font-semibold">todo or not todo?</h1>
-          <div className="text-sm text-slate-500">{stats.remaining} left • {stats.done} done</div>
+
+          <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
+            <div className="text-sm text-app-muted">{stats.remaining} left • {stats.done} done</div>
+
+            {/* THEME TOGGLE */}
+            <button
+              onClick={() => setTheme(t => (t === "light" ? "dark" : "light"))}
+              aria-label="Toggle theme"
+              className="btn-plain"
+              title="Toggle theme"
+              style={{ padding: "6px 10px" }}
+            >
+              {theme === "light" ? "🌙 Dark" : "🌤 Light"}
+            </button>
+          </div>
         </header>
 
         <TodoEditor onAdd={add} />
 
-        {/* Toolbar no longer needs total/done/remaining props */}
         <Toolbar
           filter={filter}
           setFilter={setFilter}
@@ -67,7 +99,7 @@ export default function App() {
           <TodoList todos={visible} onToggle={toggle} onRemove={remove} onUpdate={update} />
         </main>
 
-        <footer className="mt-6 flex items-center justify-between text-sm text-slate-500">
+        <footer className="mt-6 flex items-center justify-between text-sm text-app-muted">
           <div>{stats.total} items</div>
           <div> Have a nice day :)</div>
           <div>Made by ting</div>
