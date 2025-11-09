@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
 import { useEffect, useReducer, useState } from "react";
 import type { Todo, Recurrence } from "../types";
 import { parseLocalDateTime } from "../utils/dates";
@@ -73,7 +72,7 @@ function computeNextDue(todo: Todo): string | null {
     const interval = (rec as any).interval ?? 1;
     const dom = (rec as any).dayOfMonth ?? base.getDate();
     next.setMonth(next.getMonth() + Math.max(1, Number(interval)));
-    // set day; JS will roll if day exceeds month length
+    // set day;
     next.setDate(dom);
   }
 
@@ -107,7 +106,7 @@ export function useTodos() {
         return;
       }
     } catch (e) {
-      console.warn("Failed to load todos from localStorage:", e);
+      console.warn("Oops! Failed to load todos from localStorage:", e);
     }
 
     dispatch({
@@ -130,7 +129,7 @@ export function useTodos() {
     try {
       localStorage.setItem(LOCAL_KEY, JSON.stringify(state.todos));
     } catch (e) {
-      console.warn("Failed to save todos:", e);
+      console.warn("Oh no! Failed to save todos:", e);
     }
   }, [state.todos]);
 

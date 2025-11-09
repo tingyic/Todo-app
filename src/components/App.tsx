@@ -1,4 +1,4 @@
-/* eslint-disable @typescript-eslint/no-unused-vars */
+ 
 import { useMemo, useState, useEffect } from "react";
 import { useTodos } from "../hooks/useTodos";
 import TodoEditor from "./TodoEditor";
@@ -6,7 +6,7 @@ import TodoList from "./TodoList";
 import Toolbar from "./Toolbar";
 
 export default function App() {
-  const { todos, add, toggle, remove, update, clearCompleted, setAll, autoCreateNext, setAutoCreateNext } = useTodos();
+  const { todos, add, toggle, remove, update, clearCompleted, setAll } = useTodos();
 
   const [filter, setFilter] = useState<"all" | "active" | "completed">("all");
   const [query, setQuery] = useState("");
