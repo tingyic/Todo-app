@@ -133,7 +133,7 @@ export default function ReminderManager({ todos, enabled = true }: Props) {
         display: "flex", flexDirection: "column", gap: 8, zIndex: 9999, maxWidth: 320,
       }}>
         {toasts.map(t => (
-          <div key={t.id} style={{
+          <div key={t.id} className="toast" style={{
             background: "#111827", color: "#fff", padding: "10px 12px",
             borderRadius: 8, boxShadow: "0 6px 20px rgba(2,6,23,0.6)"
           }}>

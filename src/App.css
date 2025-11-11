@@ -348,11 +348,141 @@ input.p-1,
 input.px-2,
 input.text-sm,
 input[type="search"] {
-  background: var(--app-input-bg) !important;
-  border: 1px solid var(--app-input-border) !important;
-  color: var(--app-text) !important;
-  caret-color: var(--app-text) !important;
-  padding: 8px !important;
-  border-radius: 8px !important;
-  box-sizing: border-box !important;
+  background: var(--app-input-bg);
+  border: 1px solid var(--app-input-border);
+  color: var(--app-text);
+  caret-color: var(--app-text);
+  padding: 8px;
+  border-radius: 8px;
+  box-sizing: border-box;
 }
+
+@media (prefers-reduced-motion: reduce) {
+  .todo-item,
+  .editor-btn,
+  .btn-plain,
+  .toast,
+  input[type="checkbox"]::after {
+    transition: none;
+    animation: none;
+  }
+}
+
+.todo-item {
+  transform: translateY(0);
+  opacity: 1;
+  transition:
+    transform 300ms cubic-bezier(.2,.9,.2,1),
+    opacity 300ms ease,
+    box-shadow 200ms ease;
+  transition-delay: calc(var(--i, 0) * 100ms);
+  will-change: transform, opacity;
+}
+
+.todo-item.enter {
+  transform: translateY(14px);
+  opacity: 0;
+}
+
+.todo-item.leaving {
+  opacity: 0;
+  transform: translateY(-10px) scale(0.995);
+  transition-duration: 250ms;
+  transition-timing-function: ease;
+  transition-delay: 0ms;
+  pointer-events: none;
+}
+
+.todo-item:hover {
+  box-shadow: 0 10px 30px rgba(2,6,23,0.06);
+  transform: translateY(-4px);
+}
+
+input[type="checkbox"] {
+  transition: background 180ms ease, border-color 180ms ease, transform 120ms ease;
+}
+input[type="checkbox"]:active { transform: scale(0.96); }
+
+input[type="checkbox"]::after {
+  transform-origin: center;
+  transform: rotate(45deg) scale(0.6);
+  transition: opacity 160ms ease, transform 200ms cubic-bezier(.2,.9,.2,1);
+  opacity: 0;
+}
+
+input[type="checkbox"]:checked::after {
+  opacity: 1;
+  transform: rotate(45deg) scale(1);
+}
+
+button.editor-btn, .editor-btn {
+  transition: transform 140ms ease, box-shadow 160ms ease, background 160ms ease;
+}
+button.editor-btn:hover {
+  transform: translateY(-3px) scale(1.02);
+  box-shadow: 0 10px 30px rgba(17,24,39,0.12);
+}
+
+button.btn-plain {
+  transition: transform 120ms ease, box-shadow 140ms ease, background 120ms ease;
+}
+button.btn-plain:hover { transform: translateY(-1px); }
+
+button.btn-plain,
+.toolbar button,
+.header-toolbar button,
+button.filter,
+button.clear-completed,
+button.mark-all,
+button.mark-all-true,
+button.mark-all-false,
+button.button--filter,
+button.button-filter {
+  transition: transform 140ms ease, box-shadow 160ms ease, background 120ms ease, color 120ms ease;
+}
+button.btn-plain:hover,
+.toolbar button:hover,
+.header-toolbar button:hover,
+button.filter:hover,
+button.clear-completed:hover,
+button.mark-all:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 20px rgba(2,6,23,0.06);
+}
+
+/* Danger / delete button hover: small lift + more visible border */
+button.btn-danger,
+.btn-danger {
+  transition: transform 140ms ease, color 140ms ease, border-color 140ms ease, background 120ms ease;
+}
+button.btn-danger:hover {
+  transform: translateY(-2px);
+  color: #7b1111; /* a little deeper red on hover */
+  border-color: rgba(185,28,28,0.28);
+}
+
+.toast {
+  transform: translateY(10px);
+  opacity: 0;
+  animation: toast-in 260ms cubic-bezier(.2,.9,.2,1) forwards;
+}
+@keyframes toast-in {
+  from { transform: translateY(10px); opacity: 0; }
+  to   { transform: translateY(0);   opacity: 1; }
+}
+
+.tag, .priority-badge, .todo-meta, .todo-date {
+  transition: background-color 140ms ease, color 140ms ease, border-color 140ms ease;
+}
+
+.reminder-pill {
+  transition: transform 160ms ease, opacity 160ms ease;
+  transform-origin: left center;
+}
+
+button:focus, input:focus, select:focus, .editor-input:focus {
+  outline-offset: 2px;
+  box-shadow: 0 0 0 4px rgba(99,102,241,0.08);
+}
+
+.low-motion .todo-item { transition-duration: 90ms; }

@@ -1,8 +1,9 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { Todo, Priority, Recurrence } from "../types";
 import { formatLocalDateTime, parseLocalDateTime } from "../utils/dates";
 
 type Props = {
+  index?: number;
   todo: Todo;
   onToggle: (id: string, createNext?: boolean | null) => void; // createNext overrides global setting
   onRemove: (id: string) => void;
@@ -30,7 +31,7 @@ function recurrenceLabel(r?: Todo["recurrence"]) {
   return "";
 }
 
-export default function TodoItem({ todo, onToggle, onRemove, onUpdate }: Props) {
+export default function TodoItem({ index, todo, onToggle, onRemove, onUpdate }: Props) {
   const [editing, setEditing] = useState(false);
 
   const [draft, setDraft] = useState(() => ({
@@ -56,6 +57,20 @@ export default function TodoItem({ todo, onToggle, onRemove, onUpdate }: Props) 
 
   // UI help for adding reminders in edit mode
   const [reminderSelect, setReminderSelect] = useState<number | "">(5);
+
+  const rootRef = useRef<HTMLDivElement | null>(null);
+  const [leaving, setLeaving] = useState(false);
+
+  // add entrance animation class on mount
+  useEffect(() => {
+    const el = rootRef.current;
+    if (!el) return;
+    el.classList.add("enter");
+    const t = window.setTimeout(() => el.classList.remove("enter"), 20);
+    return () => {
+      clearTimeout(t);
+    };
+  }, []);
 
   function toggleWeekday(d: number) {
     setWeekdays(prev => (prev.includes(d) ? prev.filter(x => x !== d) : [...prev, d].sort()));
@@ -115,6 +130,12 @@ export default function TodoItem({ todo, onToggle, onRemove, onUpdate }: Props) 
     setConfirmOpen(true);
   }
 
+  function handleDeleteClick() {
+    setLeaving(true);
+    // match CSS leaving animation duration (220ms)
+    setTimeout(() => onRemove(todo.id), 220);
+  }
+
   // compute expired
   const expired = (() => {
     if (!todo.due) return false;
@@ -134,8 +155,15 @@ export default function TodoItem({ todo, onToggle, onRemove, onUpdate }: Props) 
 
   const recLabel = recurrenceLabel(todo.recurrence);
 
+  // typed CSS var for --i (no any)
+  const cssVars = { ['--i' as any]: index ?? 0 } as React.CSSProperties & Record<string, number>;
+
   return (
-    <div className={`todo-item ${todo.done ? "todo-done" : ""}`}>
+    <div
+      ref={rootRef}
+      className={`todo-item ${todo.done ? "todo-done" : ""} ${leaving ? "leaving" : ""}`}
+      style={cssVars}
+    >
       <div className="todo-col-checkbox">
         <input
           aria-label="Toggle todo"
@@ -332,7 +360,7 @@ export default function TodoItem({ todo, onToggle, onRemove, onUpdate }: Props) 
               setWeekdays(recurrenceHasWeekdays(todo.recurrence) ? (todo.recurrence!.weekdays ?? []) : []);
             }}>Edit</button>
 
-            <button className="btn-danger" onClick={() => onRemove(todo.id)}>Delete</button>
+            <button className="btn-danger" onClick={handleDeleteClick}>Delete</button>
           </>
         ) : null}
       </div>
