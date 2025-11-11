@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import { useState } from "react";
 import type { Recurrence } from "../types";
 
@@ -8,6 +9,7 @@ type Props = {
     due?: string | null;
     priority?: "high" | "medium" | "low";
     recurrence?: Recurrence | null;
+    reminders?: number[]; // NEW: array of minutes before due, e.g. [30,5]
   }) => void;
 };
 
@@ -23,8 +25,27 @@ export default function TodoEditor({ onAdd }: Props) {
   const [interval, setInterval] = useState<number>(1);
   const [weekdays, setWeekdays] = useState<number[]>([]);
 
+  // NEW: reminders UI state (minutes before due)
+  const [reminderSelect, setReminderSelect] = useState<number | "">(5);
+  const [reminders, setReminders] = useState<number[]>([]);
+
   function toggleWeekday(d: number) {
     setWeekdays(prev => (prev.includes(d) ? prev.filter(x => x !== d) : [...prev, d].sort()));
+  }
+
+  function addReminder() {
+    if (reminderSelect === "") return;
+    const m = Number(reminderSelect);
+    if (!Number.isFinite(m) || m < 0) return;
+    setReminders(prev => {
+      if (prev.includes(m)) return prev;
+      return [...prev, m].sort((a, b) => a - b);
+    });
+    setReminderSelect("");
+  }
+
+  function removeReminder(m: number) {
+    setReminders(prev => prev.filter(x => x !== m));
   }
 
   function submit(e?: React.FormEvent) {
@@ -54,6 +75,7 @@ export default function TodoEditor({ onAdd }: Props) {
       due: due || null,
       priority,
       recurrence,
+      reminders: reminders.length ? reminders : undefined, // include reminders
     });
 
     // reset
@@ -65,6 +87,8 @@ export default function TodoEditor({ onAdd }: Props) {
     setFreq("daily");
     setInterval(1);
     setWeekdays([]);
+    setReminders([]);
+    setReminderSelect(5);
   }
 
   return (
@@ -101,7 +125,7 @@ export default function TodoEditor({ onAdd }: Props) {
       </select>
 
       <label style={{ display: "flex", alignItems: "center", gap: 6 }}>
-        <input type="checkbox" className="app-checkbox" checked={isRecurring} onChange={(e) => setIsRecurring(e.target.checked)} aria-label="Recurring"/>
+        <input type="checkbox" className="app-checkbox" checked={isRecurring} onChange={(e) => setIsRecurring(e.target.checked)} aria-label="Recurring" />
         Recurring
       </label>
 
@@ -143,7 +167,37 @@ export default function TodoEditor({ onAdd }: Props) {
         </div>
       )}
 
-      <button type="submit" className="editor-btn">Add</button>
+      {/* -- Reminders UI -- */}
+      <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+        <select
+          value={reminderSelect}
+          onChange={(e) => setReminderSelect(e.target.value === "" ? "" : Number(e.target.value))}
+          className="editor-input"
+          style={{ width: 120 }}
+        >
+          <option value="">Reminder</option>
+          <option value={60}>1 hr</option>
+          <option value={30}>30 min</option>
+          <option value={10}>10 min</option>
+          <option value={5}>5 min</option>
+          <option value={1}>1 min</option>
+          <option value={0}>At due</option>
+        </select>
+        <button type="button" onClick={addReminder} className="btn-plain" style={{ padding: "6px 8px" }}>Add reminder</button>
+      </div>
+
+      {reminders.length > 0 && (
+        <div style={{ display: "flex", gap: 8, marginTop: 6, flexWrap: "wrap", width: "100%" }}>
+          {reminders.map(m => (
+            <div key={m} style={{ display: "inline-flex", alignItems: "center", gap: 8, padding: "4px 8px", borderRadius: 999, border: "1px solid var(--app-border)", background: "var(--tag-bg)" }}>
+              <span style={{ fontSize: 12 }}>{m === 0 ? "At due" : (m >= 60 ? `${m/60} hr` : `${m} min`)}</span>
+              <button type="button" onClick={() => removeReminder(m)} className="btn-plain" style={{ padding: "4px 6px" }}>×</button>
+            </div>
+          ))}
+        </div>
+      )}
+
+      <button type="submit" className="editor-btn">Add task</button>
     </form>
   );
 }

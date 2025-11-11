@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import { useEffect, useReducer, useState } from "react";
 import type { Todo, Recurrence } from "../types";
 import { parseLocalDateTime } from "../utils/dates";
@@ -91,6 +92,7 @@ type AddPayload = {
   due?: string | null;
   priority?: Todo["priority"];
   recurrence?: Recurrence | null;
+  reminders?: number[];
 };
 
 export function useTodos() {
@@ -148,6 +150,10 @@ export function useTodos() {
       ? (payload.priority as Todo["priority"])
       : "medium";
 
+    const reminders = Array.isArray((payload as any).reminders)
+      ?(payload as any).reminders.map((n: any) => Math.max(0, Number(n) || 0)).filter((n : Number) => Number.isFinite(n))
+      : [];
+      
     const todo: Todo = {
       id: uid(),
       text,
@@ -157,7 +163,9 @@ export function useTodos() {
       tags,
       priority,
       recurrence: (payload as any).recurrence ?? null,
+      reminders: reminders.length ? reminders : undefined,
     };
+
 
     console.log("[useTodos.add] created todo:", todo);
 
