@@ -14,4 +14,5 @@ export type Todo = {
   tags: string[];
   priority: Priority;
   recurrence?: Recurrence | null;
+  reminders?: number[];
 };

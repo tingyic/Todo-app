@@ -1,9 +1,9 @@
- 
 import { useMemo, useState, useEffect } from "react";
 import { useTodos } from "../hooks/useTodos";
 import TodoEditor from "./TodoEditor";
 import TodoList from "./TodoList";
 import Toolbar from "./Toolbar";
+import ReminderManager from "./ReminderManager";
 
 export default function App() {
   const { todos, add, toggle, remove, update, clearCompleted, setAll } = useTodos();
@@ -27,7 +27,7 @@ export default function App() {
     if (theme === "dark") root.classList.add("theme-dark");
     else root.classList.remove("theme-dark");
 
-    try { localStorage.setItem("todo-theme", theme); } catch { /* empty */ }
+    try { localStorage.setItem("todo-theme", theme); } catch { /* ignore */ }
   }, [theme]);
 
   const stats = useMemo(() => {
@@ -60,6 +60,20 @@ export default function App() {
     return list;
   }, [todos, filter, query, sortBy]);
 
+  // Reminders: saved in localStorage (only the ON/OFF toggle)
+  const [remindersEnabled, setRemindersEnabled] = useState<boolean>(() => {
+    try {
+      const v = localStorage.getItem("todo-reminders-enabled");
+      return v === null ? true : v === "1";
+    } catch {
+      return true;
+    }
+  });
+
+  useEffect(() => {
+    try { localStorage.setItem("todo-reminders-enabled", remindersEnabled ? "1" : "0"); } catch { /* ignore */ }
+  }, [remindersEnabled]);
+
   return (
     <div className="min-h-screen bg-app-root flex items-start justify-center py-12 px-4">
       <div className="w-full max-w-3xl bg-app-card rounded-2xl shadow-lg p-6">
@@ -79,6 +93,21 @@ export default function App() {
             >
               {theme === "light" ? "🌙 Dark" : "🌤 Light"}
             </button>
+
+            {/* REMINDERS toggle (per-task reminders are used; no global lead) */}
+            <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+              <button
+                onClick={() => setRemindersEnabled(e => !e)}
+                className="btn-plain"
+                title={remindersEnabled ? "Disable reminders" : "Enable reminders"}
+                style={{ padding: "6px 10px" }}
+              >
+                {remindersEnabled ? "🔔 Reminders On" : "🔕 Reminders Off"}
+              </button>
+              <div style={{ fontSize: 12, color: "var(--app-muted)" }}>
+                {remindersEnabled ? "Per-task reminders enabled" : "Reminders disabled"}
+              </div>
+            </div>
           </div>
         </header>
 
@@ -105,6 +134,9 @@ export default function App() {
           <div>Made by ting</div>
         </footer>
       </div>
+
+      {/* ReminderManager now only needs todos + enabled */}
+      <ReminderManager todos={todos} enabled={remindersEnabled} />
     </div>
   );
 }
