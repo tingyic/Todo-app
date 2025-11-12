@@ -26,14 +26,14 @@ export default function Toolbar({
   }
 
   return (
-    <div className="flex gap-3 items-center mb-4">
+    <div className="toolbar flex gap-3 items-center mb-4">
       <div className="flex gap-1 bg-slate-50 rounded-md p-1">
         <button onClick={() => setFilter("all")} className={`px-3 py-1 rounded ${filter === "all" ? "bg-white shadow" : "text-slate-600"}`}>All</button>
         <button onClick={() => setFilter("active")} className={`px-3 py-1 rounded ${filter === "active" ? "bg-white shadow" : "text-slate-600"}`}>Active</button>
         <button onClick={() => setFilter("completed")} className={`px-3 py-1 rounded ${filter === "completed" ? "bg-white shadow" : "text-slate-600"}`}>Completed</button>
       </div>
 
-      <div className="flex items-center gap-2 ml-auto">
+      <div className="toolbar flex items-center gap-2 ml-auto">
         <input className="rounded-md border p-1 px-2 text-sm" placeholder="Search tags or text" value={query} onChange={(e) => setQuery(e.target.value)} />
         <select className="rounded-md border p-1 text-sm" value={sortBy} onChange={onSortChange}>
           <option value="created">Newest</option>
