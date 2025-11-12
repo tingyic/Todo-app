@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
 import { useState } from "react";
 import type { Recurrence } from "../types";
 
@@ -118,7 +117,7 @@ export default function TodoEditor({ onAdd }: Props) {
         style={{ width: 220 }}
       />
 
-      <select value={priority} onChange={(e) => setPriority(e.target.value as any)} className="editor-input" style={{ width: 120 }}>
+      <select value={priority} onChange={(e) => setPriority(e.target.value as "high" | "medium" | "low")} className="editor-input" style={{ width: 120 }}>
         <option value="high">High</option>
         <option value="medium">Medium</option>
         <option value="low">Low</option>
@@ -131,7 +130,7 @@ export default function TodoEditor({ onAdd }: Props) {
 
       {isRecurring && (
         <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-          <select value={freq} onChange={(e) => setFreq(e.target.value as any)} className="editor-input" style={{ width: 120 }}>
+          <select value={freq} onChange={(e) => setFreq(e.target.value as Recurrence["freq"])} className="editor-input" style={{ width: 120 }}>
             <option value="daily">Daily</option>
             <option value="weekly">Weekly</option>
             <option value="monthly">Monthly</option>

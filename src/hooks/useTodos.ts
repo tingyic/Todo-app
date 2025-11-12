@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
 import { useEffect, useReducer, useState } from "react";
 import type { Todo, Recurrence } from "../types";
 import { parseLocalDateTime } from "../utils/dates";
@@ -51,11 +50,11 @@ function computeNextDue(todo: Todo): string | null {
   const next = new Date(base.getTime());
 
   if (rec.freq === "daily") {
-    const interval = (rec as any).interval ?? 1;
+    const interval = rec.interval ?? 1;
     next.setDate(next.getDate() + Math.max(1, Number(interval)));
   } else if (rec.freq === "weekly") {
-    const interval = (rec as any).interval ?? 1;
-    const weekdays = (rec as any).weekdays as number[] | undefined;
+    const interval = rec.interval ?? 1;
+    const weekdays = rec.weekdays as number[] | undefined;
     if (Array.isArray(weekdays) && weekdays.length > 0) {
       // find the next selected weekday strictly after base (search up to 14 days)
       for (let i = 1; i <= 14; i++) {
@@ -70,8 +69,8 @@ function computeNextDue(todo: Todo): string | null {
       next.setDate(next.getDate() + interval * 7);
     }
   } else if (rec.freq === "monthly") {
-    const interval = (rec as any).interval ?? 1;
-    const dom = (rec as any).dayOfMonth ?? base.getDate();
+    const interval = rec.interval ?? 1;
+    const dom = rec.dayOfMonth ?? base.getDate();
     next.setMonth(next.getMonth() + Math.max(1, Number(interval)));
     // set day;
     next.setDate(dom);
@@ -146,12 +145,12 @@ export function useTodos() {
     const due = payload.due == null ? null : String(payload.due);
 
     const validPriorities = ["high", "medium", "low"] as const;
-    const priority = validPriorities.includes(payload.priority as any)
+    const priority = validPriorities.includes(payload.priority as Todo["priority"])
       ? (payload.priority as Todo["priority"])
       : "medium";
 
-    const reminders = Array.isArray((payload as any).reminders)
-      ?(payload as any).reminders.map((n: any) => Math.max(0, Number(n) || 0)).filter((n : Number) => Number.isFinite(n))
+    const reminders = Array.isArray(payload.reminders)
+      ? payload.reminders.map(n => Math.max(0, Number(n) || 0)).filter(n => Number.isFinite(n))
       : [];
       
     const todo: Todo = {
@@ -162,7 +161,7 @@ export function useTodos() {
       due,
       tags,
       priority,
-      recurrence: (payload as any).recurrence ?? null,
+      recurrence: payload.recurrence ?? null,
       reminders: reminders.length ? reminders : undefined,
     };
 

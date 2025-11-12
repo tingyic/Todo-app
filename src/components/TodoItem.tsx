@@ -155,8 +155,7 @@ export default function TodoItem({ index, todo, onToggle, onRemove, onUpdate }: 
 
   const recLabel = recurrenceLabel(todo.recurrence);
 
-  // typed CSS var for --i (no any)
-  const cssVars = { ['--i' as any]: index ?? 0 } as React.CSSProperties & Record<string, number>;
+  const cssVars: React.CSSProperties = { ['--i']: String(index ?? 0) } as React.CSSProperties;
 
   return (
     <div
