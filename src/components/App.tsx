@@ -131,7 +131,8 @@ export default function App() {
         <footer className="mt-6 flex items-center justify-between text-sm text-app-muted">
           <div>{stats.total} items</div>
           <div> Have a nice day :)</div>
-          <div>Made by ting</div>
+          <div>Made by reindeer</div>
+          <div> Version 1.1</div>
         </footer>
       </div>
 
