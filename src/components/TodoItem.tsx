@@ -52,6 +52,9 @@ export default function TodoItem({ index, todo, onToggle, onRemove, onUpdate }: 
   // inline confirm for toggle on recurring todos
   const [confirmOpen, setConfirmOpen] = useState(false);
 
+  // inline confirm for delete
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
+
   // EXPIRED PROMPT state: show prompt if due passed and not done.
   const [showExpiredPrompt, setShowExpiredPrompt] = useState(false);
 
@@ -131,8 +134,9 @@ export default function TodoItem({ index, todo, onToggle, onRemove, onUpdate }: 
   }
 
   function handleDeleteClick() {
+    // start leaving animation & call onRemove after match time (220ms)
     setLeaving(true);
-    // match CSS leaving animation duration (220ms)
+    setDeleteConfirmOpen(false);
     setTimeout(() => onRemove(todo.id), 220);
   }
 
@@ -155,7 +159,8 @@ export default function TodoItem({ index, todo, onToggle, onRemove, onUpdate }: 
 
   const recLabel = recurrenceLabel(todo.recurrence);
 
-  const cssVars: React.CSSProperties = { ['--i']: String(index ?? 0) } as React.CSSProperties;
+  // typed CSS var for --i (no any)
+  const cssVars = ({ ['--i']: index ?? 0 } as unknown) as React.CSSProperties & Record<string, number>;
 
   return (
     <div
@@ -359,7 +364,22 @@ export default function TodoItem({ index, todo, onToggle, onRemove, onUpdate }: 
               setWeekdays(recurrenceHasWeekdays(todo.recurrence) ? (todo.recurrence!.weekdays ?? []) : []);
             }}>Edit</button>
 
-            <button className="btn-danger" onClick={handleDeleteClick}>Delete</button>
+            {/* Delete: toggles inline delete confirmation */}
+            {!deleteConfirmOpen ? (
+              <button className="btn-danger" onClick={() => setDeleteConfirmOpen(true)}>Delete</button>
+            ) : (
+              <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                <button
+                  className="btn-danger"
+                  onClick={handleDeleteClick}
+                  title="Confirm delete"
+                  aria-label={`Confirm delete ${todo.text}`}
+                >
+                  Delete this?
+                </button>
+                <button className="btn-plain" onClick={() => setDeleteConfirmOpen(false)}>Cancel</button>
+              </div>
+            )}
           </>
         ) : null}
       </div>

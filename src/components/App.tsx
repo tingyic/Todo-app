@@ -132,7 +132,7 @@ export default function App() {
           <div>{stats.total} items</div>
           <div> Have a nice day :)</div>
           <div>Made by reindeer</div>
-          <div> Version 1.1</div>
+          <div> Version 1.1.1</div>
         </footer>
       </div>
 

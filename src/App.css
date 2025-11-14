@@ -137,7 +137,7 @@ button.btn-danger {
 
 .todo-item{
   display: grid;
-  grid-template-columns: 48px 1fr 96px;
+  grid-template-columns: 48px 1fr minmax(96px, 28%);
   gap: 12px;
   align-items: start;
   padding: 12px;
@@ -560,3 +560,22 @@ button.clear-completed.btn-danger:active {
   transform: translateY(0) scale(0.98);
 }
 
+/* make inline confirm buttons look stable and not jitter */
+.todo-col-actions { display:flex; flex-direction:column; align-items:flex-end; gap:8px; }
+
+/* prefer single-line for action buttons when there's space; they will still wrap if space is tight */
+.todo-col-actions button {
+  white-space: nowrap;
+  width: auto;
+  transition: transform 120ms ease, background 120ms ease;
+  box-sizing: border-box;
+}
+
+/* if you want the confirm area to animate slightly on open */
+.todo-col-actions > div {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  transition: opacity 160ms ease, transform 160ms ease;
+  will-change: opacity, transform;
+}
