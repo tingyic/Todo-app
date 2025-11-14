@@ -1,4 +1,4 @@
-import { useEffect, useReducer, useState } from "react";
+import { useEffect, useReducer, useRef, useState } from "react";
 import type { Todo, Recurrence } from "../types";
 import { parseLocalDateTime } from "../utils/dates";
 
@@ -44,7 +44,6 @@ function computeNextDue(todo: Todo): string | null {
   const rec: Recurrence | undefined = todo.recurrence as Recurrence | undefined;
   if (!rec) return null;
 
-  // base date-time (use due if present, else createdAt)
   const base = todo.due ? parseLocalDateTime(todo.due) : new Date(todo.createdAt);
   if (!base) return null;
   const next = new Date(base.getTime());
@@ -56,7 +55,6 @@ function computeNextDue(todo: Todo): string | null {
     const interval = rec.interval ?? 1;
     const weekdays = rec.weekdays as number[] | undefined;
     if (Array.isArray(weekdays) && weekdays.length > 0) {
-      // find the next selected weekday strictly after base (search up to 14 days)
       for (let i = 1; i <= 14; i++) {
         const cand = new Date(base.getTime());
         cand.setDate(base.getDate() + i);
@@ -72,7 +70,6 @@ function computeNextDue(todo: Todo): string | null {
     const interval = rec.interval ?? 1;
     const dom = rec.dayOfMonth ?? base.getDate();
     next.setMonth(next.getMonth() + Math.max(1, Number(interval)));
-    // set day;
     next.setDate(dom);
   }
 
@@ -98,6 +95,23 @@ export function useTodos() {
   const [state, dispatch] = useReducer(reducer, { todos: [] as Todo[] });
   const [autoCreateNext, setAutoCreateNext] = useState<boolean>(true);
 
+  // undo history: array of previous todos arrays
+  const historyRef = useRef<Todo[][]>([]);
+  const HISTORY_MAX = 50;
+
+  // reactive undo count so UI updates
+  const [undoCount, setUndoCount] = useState<number>(0);
+
+  // undo: pop last snapshot and INIT
+  const undo = () => {
+    const hist = historyRef.current;
+    if (hist.length === 0) return;
+    const prev = hist.pop()!;
+    setUndoCount(hist.length);
+    dispatch({ type: "INIT", todos: prev });
+  };
+
+  // load from localStorage on mount
   useEffect(() => {
     try {
       const raw = localStorage.getItem(LOCAL_KEY);
@@ -126,6 +140,7 @@ export function useTodos() {
     });
   }, []);
 
+  // persist on change
   useEffect(() => {
     try {
       localStorage.setItem(LOCAL_KEY, JSON.stringify(state.todos));
@@ -134,16 +149,27 @@ export function useTodos() {
     }
   }, [state.todos]);
 
+  // helper: push snapshot of current todos to history
+  const pushHistory = () => {
+    // shallow clone todos array + shallow clone tags arrays to avoid mutation surprises
+    const copy = state.todos.map(t => ({ ...t, tags: t.tags ? t.tags.slice() : [] }));
+    historyRef.current.push(copy);
+    if (historyRef.current.length > HISTORY_MAX) historyRef.current.shift();
+    setUndoCount(historyRef.current.length);
+  };
+
+  // action wrappers that record history before mutating
   const add = (payload: AddPayload) => {
     const text = (payload?.text ?? "").toString().trim();
     if (!text) return;
+
+    pushHistory();
 
     const tags = Array.isArray(payload.tags)
       ? payload.tags.map(t => t?.toString().trim()).filter(Boolean)
       : [];
 
     const due = payload.due == null ? null : String(payload.due);
-
     const validPriorities = ["high", "medium", "low"] as const;
     const priority = validPriorities.includes(payload.priority as Todo["priority"])
       ? (payload.priority as Todo["priority"])
@@ -152,7 +178,7 @@ export function useTodos() {
     const reminders = Array.isArray(payload.reminders)
       ? payload.reminders.map(n => Math.max(0, Number(n) || 0)).filter(n => Number.isFinite(n))
       : [];
-      
+
     const todo: Todo = {
       id: uid(),
       text,
@@ -165,27 +191,15 @@ export function useTodos() {
       reminders: reminders.length ? reminders : undefined,
     };
 
-
-    console.log("[useTodos.add] created todo:", todo);
-
     dispatch({ type: "ADD", todo });
   };
 
-  /**
-   * toggle(id, createNext?)
-   * - createNext === undefined || null  => use global autoCreateNext
-   * - createNext === true  => force create next occurrence
-   * - createNext === false => do NOT create next occurrence
-   */
   const toggle = (id: string, createNext?: boolean | null) => {
-    // find todo
     const t = state.todos.find(x => x.id === id);
-    // toggle base behaviour
+    if (!t) return;
+    pushHistory();
     dispatch({ type: "TOGGLE", id });
 
-    if (!t) return;
-
-    // if marking to done and recurrence exists and creation allowed -> create next
     const willCreate = createNext === undefined || createNext === null ? autoCreateNext : createNext;
     if (!t.done && t.recurrence && willCreate) {
       const nextDue = computeNextDue(t);
@@ -205,10 +219,30 @@ export function useTodos() {
     }
   };
 
-  const remove = (id: string) => dispatch({ type: "REMOVE", id });
-  const update = (id: string, patch: Partial<Todo>) => dispatch({ type: "UPDATE", id, patch });
-  const clearCompleted = () => dispatch({ type: "CLEAR_COMPLETED" });
-  const setAll = (done: boolean) => dispatch({ type: "SET_ALL", done });
+  const remove = (id: string) => {
+    const exists = state.todos.some(t => t.id === id);
+    if (!exists) return;
+    pushHistory();
+    dispatch({ type: "REMOVE", id });
+  };
+
+  const update = (id: string, patch: Partial<Todo>) => {
+    const exists = state.todos.some(t => t.id === id);
+    if (!exists) return;
+    pushHistory();
+    dispatch({ type: "UPDATE", id, patch });
+  };
+
+  const clearCompleted = () => {
+    if (!state.todos.some(t => t.done)) return;
+    pushHistory();
+    dispatch({ type: "CLEAR_COMPLETED" });
+  };
+
+  const setAll = (done: boolean) => {
+    pushHistory();
+    dispatch({ type: "SET_ALL", done });
+  };
 
   return {
     todos: state.todos,
@@ -220,5 +254,7 @@ export function useTodos() {
     setAll,
     autoCreateNext,
     setAutoCreateNext,
+    undo,
+    canUndo: undoCount > 0,
   } as const;
 }

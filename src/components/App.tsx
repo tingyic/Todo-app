@@ -6,13 +6,13 @@ import Toolbar from "./Toolbar";
 import ReminderManager from "./ReminderManager";
 
 export default function App() {
-  const { todos, add, toggle, remove, update, clearCompleted, setAll } = useTodos();
+  const { todos, add, toggle, remove, update, clearCompleted, setAll, undo, canUndo } = useTodos();
 
   const [filter, setFilter] = useState<"all" | "active" | "completed">("all");
   const [query, setQuery] = useState("");
   const [sortBy, setSortBy] = useState<"created" | "due" | "priority">("created");
 
-  // THEME: light | dark
+  // THEME
   const [theme, setTheme] = useState<"light" | "dark">(() => {
     try {
       return (localStorage.getItem("todo-theme") as "light" | "dark") ?? "light";
@@ -22,7 +22,6 @@ export default function App() {
   });
 
   useEffect(() => {
-    // apply class on <html> so CSS can target .theme-dark
     const root = document.documentElement;
     if (theme === "dark") root.classList.add("theme-dark");
     else root.classList.remove("theme-dark");
@@ -74,6 +73,22 @@ export default function App() {
     try { localStorage.setItem("todo-reminders-enabled", remindersEnabled ? "1" : "0"); } catch { /* ignore */ }
   }, [remindersEnabled]);
 
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      const target = e.target as HTMLElement | null;
+      if (target && (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable)) return;
+
+      const isMac = navigator.platform.toUpperCase().includes("MAC");
+      const mod = isMac ? e.metaKey : e.ctrlKey;
+      if (mod && e.key.toLowerCase() === "z") {
+        e.preventDefault();
+        undo();
+      }
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [undo]);
+
   return (
     <div className="min-h-screen bg-app-root flex items-start justify-center py-12 px-4">
       <div className="w-full max-w-3xl bg-app-card rounded-2xl shadow-lg p-6">
@@ -81,6 +96,11 @@ export default function App() {
           <h1 className="text-2xl font-semibold">todo or not todo?</h1>
 
           <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
+            {/* undo hint */}
+            <div style={{ fontSize: 12, opacity: 0.8 }}>
+              {canUndo ? "Press Ctrl/Cmd+Z to undo" : "No undo available"}
+            </div>
+
             <div className="text-sm text-app-muted">{stats.remaining} left • {stats.done} done</div>
 
             {/* THEME TOGGLE */}
@@ -94,7 +114,7 @@ export default function App() {
               {theme === "light" ? "🌙 Dark" : "🌤 Light"}
             </button>
 
-            {/* REMINDERS toggle (per-task reminders are used; no global lead) */}
+            {/* REMINDERS toggle */}
             <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
               <button
                 onClick={() => setRemindersEnabled(e => !e)}
@@ -132,11 +152,10 @@ export default function App() {
           <div>{stats.total} items</div>
           <div> Have a nice day :)</div>
           <div>Made by reindeer</div>
-          <div> Version 1.1.1</div>
+          <div> Version 1.2</div>
         </footer>
       </div>
 
-      {/* ReminderManager now only needs todos + enabled */}
       <ReminderManager todos={todos} enabled={remindersEnabled} />
     </div>
   );
