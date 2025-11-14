@@ -39,8 +39,8 @@ export default function Toolbar({
           <option value="created">Newest</option>
           <option value="due">Due date</option>
           <option value="priority">Priority</option>
-        </select>
-        <button className="text-sm underline" onClick={() => { if (confirm("Are you sure u want to clear completed todos?")) clearCompleted(); }}>Clear completed</button>
+        </select> 
+        <button className="btn-danger clear-completed text-sm" onClick={() => { if (confirm("Are you sure u want to clear completed todos?")) clearCompleted(); }} title="Clear completed" aria-label="Clear completed todos">Clear completed</button>
         <button onClick={() => markAll(true)} className="px-3 py-1 rounded border text-sm" title="Mark all done">✓ All</button>
         <button onClick={() => markAll(false)} className="px-3 py-1 rounded border text-sm" title="Mark all active">⨯ All</button>
       </div>

@@ -25,6 +25,12 @@
   --prio-medium-bg: #fff8e6;
   --prio-low: #05603a;
   --prio-low-bg: #f0fff8;
+
+  /* ---- danger variables (used for delete + clear completed) ---- */
+  --danger: #9b1c1c;
+  --danger-border: rgba(185,28,28,0.18);
+  --danger-border-hover: rgba(185,28,28,0.28);
+  --danger-bg-hover: rgba(255, 120, 120, 0.03);
 }
 
 .theme-dark{
@@ -53,6 +59,12 @@
   --prio-medium-bg: #33210a;
   --prio-low: #7be3a6;
   --prio-low-bg: #083222;
+
+  /* danger in dark theme */
+  --danger: #ff7b7b;
+  --danger-border: rgba(255,123,123,0.12);
+  --danger-border-hover: rgba(255,123,123,0.22);
+  --danger-bg-hover: rgba(255,123,123,0.04);
 }
 
 /* =========================
@@ -114,8 +126,8 @@ button.btn-danger {
   padding: 6px 8px;
   border-radius: 8px;
   background: var(--btn-plain-bg);
-  color: var(--btn-text);
-  border: 1px solid rgba(185,28,28,0.12);
+  color: var(--danger);
+  border: 1px solid var(--danger-border);
   cursor: pointer;
 }
 
@@ -258,7 +270,6 @@ ul.todo-list li{ list-style:none; }
 /* Responsive behavior: keep wrapping consistent */
 .todo-title{ word-break: break-word; overflow-wrap: anywhere; }
 
-
 /* Ensure priority badges keep their color backgrounds */
 .priority-badge.prio-high { background: var(--prio-high-bg); color: var(--prio-high); }
 .priority-badge.prio-medium { background: var(--prio-medium-bg); color: var(--prio-medium); }
@@ -292,12 +303,39 @@ button.button-filter {
   box-shadow: none;
 }
 
-/* Delete button: same base as plain but readable in light mode (red hint) */
+/* Delete button: now uses danger variables */
 button.btn-danger,
 .btn-danger {
   background: var(--btn-plain-bg);
-  color: #9b1c1c;
-  border: 1px solid rgba(185,28,28,0.18);
+  color: var(--danger);
+  border: 1px solid var(--danger-border);
+}
+
+button.clear-completed,
+.clear-completed {
+  background: var(--btn-plain-bg);
+  color: var(--danger);
+  border: 1px solid var(--danger-border);
+  transition: transform 140ms ease, color 140ms ease, border-color 140ms ease, background 120ms ease, box-shadow 140ms ease;
+  cursor: pointer;
+}
+button.clear-completed.text-sm,
+.clear-completed.text-sm {
+  padding: 6px 8px;
+  border-radius: 8px;
+  font-size: 0.9rem;
+}
+button.clear-completed:hover,
+.clear-completed:hover {
+  transform: translateY(-2px);
+  color: var(--danger);
+  border-color: var(--danger-border-hover);
+  background: var(--danger-bg-hover);
+  box-shadow: 0 8px 20px rgba(2,6,23,0.06);
+}
+button.clear-completed:active,
+.clear-completed:active {
+  transform: translateY(0) scale(0.98);
 }
 
 input[type="checkbox"] {
@@ -457,10 +495,11 @@ button.btn-danger,
 }
 button.btn-danger:hover {
   transform: translateY(-2px);
-  color: #7b1111; /* a little deeper red on hover */
-  border-color: rgba(185,28,28,0.28);
+  color: var(--danger);
+  border-color: var(--danger-border-hover);
 }
 
+/* toast animation */
 .toast {
   transform: translateY(10px);
   opacity: 0;
@@ -486,3 +525,38 @@ button:focus, input:focus, select:focus, .editor-input:focus {
 }
 
 .low-motion .todo-item { transition-duration: 90ms; }
+
+.toolbar button.clear-completed,
+.toolbar .clear-completed,
+button.clear-completed.btn-danger {
+  background: var(--btn-plain-bg);
+  color: var(--danger);
+  border: 1px solid var(--danger-border);
+  box-shadow: none;
+  transition: transform 140ms ease, color 140ms ease, border-color 140ms ease, background 120ms ease, box-shadow 140ms ease;
+  cursor: pointer;
+}
+
+.toolbar button.clear-completed.text-sm,
+.toolbar .clear-completed.text-sm {
+  padding: 6px 8px;
+  border-radius: 8px;
+  font-size: 0.9rem;
+}
+
+.toolbar button.clear-completed:hover,
+.toolbar .clear-completed:hover,
+button.clear-completed.btn-danger:hover {
+  transform: translateY(-2px);
+  color: var(--danger);
+  border-color: var(--danger-border-hover);
+  background: var(--danger-bg-hover);
+  box-shadow: 0 8px 20px rgba(2,6,23,0.06);
+}
+
+.toolbar button.clear-completed:active,
+.toolbar .clear-completed:active,
+button.clear-completed.btn-danger:active {
+  transform: translateY(0) scale(0.98);
+}
+
