@@ -95,20 +95,38 @@ export function useTodos() {
   const [state, dispatch] = useReducer(reducer, { todos: [] as Todo[] });
   const [autoCreateNext, setAutoCreateNext] = useState<boolean>(true);
 
-  // undo history: array of previous todos arrays
-  const historyRef = useRef<Todo[][]>([]);
+  // undo/redo history
+  const pastRef = useRef<Todo[][]>([]); // undo history (older snapshots)
+  const futureRef = useRef<Todo[][]>([]); // redo history (snapshots undone)
   const HISTORY_MAX = 50;
 
-  // reactive undo count so UI updates
   const [undoCount, setUndoCount] = useState<number>(0);
+  const [redoCount, setRedoCount] = useState<number>(0);
 
-  // undo: pop last snapshot and INIT
+  // undo: restore last snapshot from past -> move current to future
   const undo = () => {
-    const hist = historyRef.current;
-    if (hist.length === 0) return;
-    const prev = hist.pop()!;
-    setUndoCount(hist.length);
+    const past = pastRef.current;
+    if (past.length === 0) return;
+    const prev = past.pop()!;
+    // push current state to future so redo is possible
+    futureRef.current.push(state.todos.map(t => ({ ...t, tags: t.tags ? t.tags.slice() : [] })));
+    // cap future
+    if (futureRef.current.length > HISTORY_MAX) futureRef.current.shift();
+    setUndoCount(past.length);
+    setRedoCount(futureRef.current.length);
     dispatch({ type: "INIT", todos: prev });
+  };
+
+  // redo: restore last snapshot from future -> push current to past
+  const redo = () => {
+    const fut = futureRef.current;
+    if (fut.length === 0) return;
+    const next = fut.pop()!;
+    pastRef.current.push(state.todos.map(t => ({ ...t, tags: t.tags ? t.tags.slice() : [] })));
+    if (pastRef.current.length > HISTORY_MAX) pastRef.current.shift();
+    setUndoCount(pastRef.current.length);
+    setRedoCount(fut.length);
+    dispatch({ type: "INIT", todos: next });
   };
 
   // load from localStorage on mount
@@ -149,13 +167,15 @@ export function useTodos() {
     }
   }, [state.todos]);
 
-  // helper: push snapshot of current todos to history
+  // helper: push snapshot of current todos to past (and clear future)
   const pushHistory = () => {
-    // shallow clone todos array + shallow clone tags arrays to avoid mutation surprises
-    const copy = state.todos.map(t => ({ ...t, tags: t.tags ? t.tags.slice() : [] }));
-    historyRef.current.push(copy);
-    if (historyRef.current.length > HISTORY_MAX) historyRef.current.shift();
-    setUndoCount(historyRef.current.length);
+    const snapshot = state.todos.map(t => ({ ...t, tags: t.tags ? t.tags.slice() : [] }));
+    pastRef.current.push(snapshot);
+    if (pastRef.current.length > HISTORY_MAX) pastRef.current.shift();
+    // performing a new action invalidates redo stack
+    futureRef.current.length = 0;
+    setUndoCount(pastRef.current.length);
+    setRedoCount(0);
   };
 
   // action wrappers that record history before mutating
@@ -255,6 +275,8 @@ export function useTodos() {
     autoCreateNext,
     setAutoCreateNext,
     undo,
+    redo,
     canUndo: undoCount > 0,
+    canRedo: redoCount > 0,
   } as const;
 }
