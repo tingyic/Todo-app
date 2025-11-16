@@ -1,4 +1,5 @@
-type SoundName = "add" | "delete" | "done" | "undo" | "redo" | "error" | "click";
+type SoundName = "add" | "delete" | "done" | "undo" | "redo" | "error" | "click" | "celebrate";
+
 
 const ctxRef: { ctx: AudioContext | null } = { ctx: null };
 
@@ -26,41 +27,64 @@ function playSound(name: SoundName, volume = 0.12) {
     }
 
     const now = ctx.currentTime;
-    const gain = ctx.createGain();
-    gain.gain.setValueAtTime(0.0001, now);
-    gain.connect(ctx.destination);
 
-    let oscType: OscillatorType = "sine";
-    let freq = 440;
-    let duration = 0.12;
+    // helper to create an oscillator with gain envelope
+    const makeTone = (freqStart: number, freqEnd: number, type: OscillatorType, dur = 0.12, offset = 0) => {
+      const t0 = now + offset;
+      const gain = ctx.createGain();
+      gain.gain.setValueAtTime(0.0001, t0);
+      gain.connect(ctx.destination);
+
+      const osc = ctx.createOscillator();
+      osc.type = type;
+      osc.frequency.setValueAtTime(freqStart, t0);
+      // gentle ramp if freqEnd != freqStart
+      if (freqEnd !== freqStart) osc.frequency.exponentialRampToValueAtTime(Math.max(1, freqEnd), t0 + dur);
+
+      osc.connect(gain);
+
+      gain.gain.cancelScheduledValues(t0);
+      gain.gain.setValueAtTime(0.0001, t0);
+      gain.gain.exponentialRampToValueAtTime(Math.max(0.0001, volume), t0 + 0.01);
+      gain.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
+
+      osc.start(t0);
+      osc.stop(t0 + dur + 0.02);
+
+      osc.onended = () => {
+        try { osc.disconnect(); gain.disconnect(); } catch { /* ignore */ }
+      };
+    };
 
     switch (name) {
-      case "add": freq = 880; oscType = "sine"; duration = 0.12; break;
-      case "delete": freq = 220; oscType = "sawtooth"; duration = 0.18; break;
-      case "done": freq = 660; oscType = "triangle"; duration = 0.14; break;
-      case "undo": freq = 520; oscType = "sine"; duration = 0.12; break;
-      case "redo": freq = 760; oscType = "sine"; duration = 0.12; break;
-      case "error": freq = 180; oscType = "sawtooth"; duration = 0.22; break;
-      case "click": freq = 1200; oscType = "square"; duration = 0.06; break;
+      case "add":
+        makeTone(880, 880, "sine", 0.12, 0);
+        break;
+      case "delete":
+        makeTone(220, 220, "sawtooth", 0.18, 0);
+        break;
+      case "done":
+        makeTone(660, 660, "triangle", 0.14, 0);
+        break;
+      case "undo":
+        makeTone(520, 520, "sine", 0.12, 0);
+        break;
+      case "redo":
+        makeTone(760, 760, "sine", 0.12, 0);
+        break;
+      case "error":
+        makeTone(180, 180, "sawtooth", 0.22, 0);
+        break;
+      case "click":
+        makeTone(1200, 1200, "square", 0.06, 0);
+        break;
+
+      case "celebrate":
+        makeTone(880, 1100, "triangle", 0.14, 0);
+        makeTone(1100, 1400, "triangle", 0.12, 0.06);
+        makeTone(1400, 1760, "triangle", 0.12, 0.12); 
+        break;
     }
-
-    const osc = ctx.createOscillator();
-    osc.type = oscType;
-    osc.frequency.setValueAtTime(freq, now);
-    osc.connect(gain);
-
-    // envelope
-    gain.gain.cancelScheduledValues(now);
-    gain.gain.setValueAtTime(0.0001, now);
-    gain.gain.exponentialRampToValueAtTime(Math.max(0.0001, volume), now + 0.01);
-    gain.gain.exponentialRampToValueAtTime(0.0001, now + duration);
-
-    osc.start(now);
-    osc.stop(now + duration + 0.02);
-
-    osc.onended = () => {
-      try { osc.disconnect(); gain.disconnect(); } catch { /* ignore */ }
-    };
   } catch {
     // ignore failures silently (older browsers, permissions)
   }

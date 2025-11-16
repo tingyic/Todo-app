@@ -285,8 +285,17 @@ export default function App() {
           <TodoList
             todos={visible}
             onToggle={(id: string) => {
+              const t = todos.find(x => x.id === id);
+              const wasDone = !!t?.done;
               toggle(id);
-              play("done", false);
+              
+              if (!wasDone) {
+                play("celebrate", true);
+                showToast("Yayyyyy lesgoooo task completed weeeee 🎉", 1400);
+              } else {
+                play("click", false);
+                showToast("Marked as not done", 900)
+              }
             }}
             onRemove={id => {
               remove(id);
@@ -305,7 +314,7 @@ export default function App() {
           <div>{stats.total} {stats.total == 1 ? "item" : "items"}</div>
           <div> Have a nice day :)</div>
           <div>Made by reindeer</div>
-          <div> Version 1.4</div>
+          <div> Version 1.4.1</div>
         </footer>
       </div>
 
