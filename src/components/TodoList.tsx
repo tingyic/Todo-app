@@ -6,9 +6,10 @@ type Props = {
   onToggle: (id: string) => void;
   onRemove: (id: string) => void;
   onUpdate: (id: string, patch: Partial<Todo>) => void;
+  dustingIds?: Set<string>;
 };
 
-export default function TodoList({ todos, onToggle, onRemove, onUpdate }: Props) {
+export default function TodoList({ todos, onToggle, onRemove, onUpdate, dustingIds }: Props) {
   if (!todos.length) return <div className="text-center text-slate-400 mt-6">No todos</div>;
   return (
     <ul className="todo-list space-y-2">
@@ -22,6 +23,7 @@ export default function TodoList({ todos, onToggle, onRemove, onUpdate }: Props)
             onToggle={onToggle}
             onRemove={onRemove}
             onUpdate={onUpdate}
+            isDusting={!!dustingIds?.has(todo.id)}
           />
         </li>
       ))}

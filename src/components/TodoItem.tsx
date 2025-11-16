@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { Todo, Priority, Recurrence } from "../types";
 import { formatLocalDateTime, parseLocalDateTime } from "../utils/dates";
+import { play } from "../utils/sound";
 
 type Props = {
   index?: number;
@@ -8,6 +9,7 @@ type Props = {
   onToggle: (id: string, createNext?: boolean | null) => void; // createNext overrides global setting
   onRemove: (id: string) => void;
   onUpdate: (id: string, patch: Partial<Todo>) => void;
+  isDusting?: boolean;
 };
 
 function recurrenceHasWeekdays(r?: Todo["recurrence"]): r is (Recurrence & { weekdays?: number[] }) {
@@ -31,7 +33,7 @@ function recurrenceLabel(r?: Todo["recurrence"]) {
   return "";
 }
 
-export default function TodoItem({ index, todo, onToggle, onRemove, onUpdate }: Props) {
+export default function TodoItem({ index, todo, onToggle, onRemove, onUpdate, isDusting = false, }: Props) {
   const [editing, setEditing] = useState(false);
 
   const [draft, setDraft] = useState(() => ({
@@ -113,6 +115,7 @@ export default function TodoItem({ index, todo, onToggle, onRemove, onUpdate }: 
       reminders: draft.reminders?.length ? draft.reminders : undefined,
     });
     setEditing(false);
+    play("click");
   }
 
   // when user clicks checkbox
@@ -120,12 +123,14 @@ export default function TodoItem({ index, todo, onToggle, onRemove, onUpdate }: 
     // If toggling from done -> undone, just toggle (no confirm)
     if (todo.done) {
       onToggle(todo.id);
+      play("undo", true);
       return;
     }
 
     // If non-recurring, simply toggle; if recurring, show inline confirm
     if (!todo.recurrence) {
       onToggle(todo.id);
+      play("done", true);
       return;
     }
 
@@ -137,6 +142,7 @@ export default function TodoItem({ index, todo, onToggle, onRemove, onUpdate }: 
     // start leaving animation & call onRemove after match time (220ms)
     setLeaving(true);
     setDeleteConfirmOpen(false);
+    play("delete", true);
     setTimeout(() => onRemove(todo.id), 220);
   }
 
@@ -165,7 +171,7 @@ export default function TodoItem({ index, todo, onToggle, onRemove, onUpdate }: 
   return (
     <div
       ref={rootRef}
-      className={`todo-item ${todo.done ? "todo-done" : ""} ${leaving ? "leaving" : ""}`}
+      className={`todo-item ${todo.done ? "todo-done" : ""} ${leaving ? "leaving" : ""} ${isDusting ? "dust" : ""}`}
       style={cssVars}
     >
       <div className="todo-col-checkbox">
@@ -209,19 +215,19 @@ export default function TodoItem({ index, todo, onToggle, onRemove, onUpdate }: 
               <div style={{ marginTop: 8, display: "flex", gap: 8 }}>
                 <button
                   className="btn-plain"
-                  onClick={() => { setConfirmOpen(false); onToggle(todo.id, true); }}
+                  onClick={() => { setConfirmOpen(false); onToggle(todo.id, true); play("done", true); }}
                 >
                   Create next
                 </button>
                 <button
                   className="btn-plain"
-                  onClick={() => { setConfirmOpen(false); onToggle(todo.id, false); }}
+                  onClick={() => { setConfirmOpen(false); onToggle(todo.id, false); play("done", true); }}
                 >
                   Mark done permanently
                 </button>
                 <button
                   className="btn-plain"
-                  onClick={() => { setConfirmOpen(false); /* cancel */ }}
+                  onClick={() => { setConfirmOpen(false); /* cancel */ play("click"); }}
                 >
                   Cancel
                 </button>
@@ -235,10 +241,10 @@ export default function TodoItem({ index, todo, onToggle, onRemove, onUpdate }: 
                   Hmm...this task's due time has passed sia. Have you finished it already? Or u simply forgor 💀
                 </div>
                 <div style={{ display: "flex", gap: 8 }}>
-                  <button type="button" className="btn-plain" onClick={() => { onToggle(todo.id); setShowExpiredPrompt(false); }}>
+                  <button type="button" className="btn-plain" onClick={() => { onToggle(todo.id); setShowExpiredPrompt(false); play("done", true); }}>
                     Sir yes sir it's done~
                   </button>
-                  <button type="button" className="btn-plain" onClick={() => { setShowExpiredPrompt(false); }}>
+                  <button type="button" className="btn-plain" onClick={() => { setShowExpiredPrompt(false); play("click"); }}>
                     No leh alamak i forgor 🤡
                   </button>
                 </div>
@@ -345,7 +351,7 @@ export default function TodoItem({ index, todo, onToggle, onRemove, onUpdate }: 
 
             <div style={{ marginTop: 8 }}>
               <button onClick={save} className="btn-plain">Save</button>
-              <button onClick={() => setEditing(false)} className="btn-plain" style={{ marginLeft: 8 }}>Cancel</button>
+              <button onClick={() => { setEditing(false); play("click"); }} className="btn-plain" style={{ marginLeft: 8 }}>Cancel</button>
             </div>
           </>
         )}
@@ -362,11 +368,12 @@ export default function TodoItem({ index, todo, onToggle, onRemove, onUpdate }: 
               setFreq((todo.recurrence?.freq) ?? "daily");
               setInterval((todo.recurrence?.interval) ?? 1);
               setWeekdays(recurrenceHasWeekdays(todo.recurrence) ? (todo.recurrence!.weekdays ?? []) : []);
+              play("click");
             }}>Edit</button>
 
             {/* Delete: toggles inline delete confirmation */}
             {!deleteConfirmOpen ? (
-              <button className="btn-danger" onClick={() => setDeleteConfirmOpen(true)}>Delete</button>
+              <button className="btn-danger" onClick={() => { setDeleteConfirmOpen(true); play("click"); }}>Delete</button>
             ) : (
               <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
                 <button
@@ -377,7 +384,7 @@ export default function TodoItem({ index, todo, onToggle, onRemove, onUpdate }: 
                 >
                   Delete this?
                 </button>
-                <button className="btn-plain" onClick={() => setDeleteConfirmOpen(false)}>Cancel</button>
+                <button className="btn-plain" onClick={() => { setDeleteConfirmOpen(false); play("click"); }}>Cancel</button>
               </div>
             )}
           </>
