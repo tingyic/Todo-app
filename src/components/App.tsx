@@ -1,10 +1,11 @@
 import { useMemo, useState, useEffect, useRef } from "react";
 import { useTodos } from "../hooks/useTodos";
+import CelebrateOverlay from "./CelebrationOverlay";
 import TodoEditor from "./TodoEditor";
 import TodoList from "./TodoList";
 import Toolbar from "./Toolbar";
 import ReminderManager from "./ReminderManager";
-import { play, isSoundEnabled, setSoundEnabled } from "../utils/sound";
+import { haptic, play, isSoundEnabled, setSoundEnabled } from "../utils/sound";
 
 export default function App() {
   const {
@@ -92,6 +93,8 @@ export default function App() {
   useEffect(() => {
     try { setSoundEnabled(soundEnabled); } catch { /* empty */ }
   }, [soundEnabled]);
+
+  const [celebrate, setCelebrate] = useState(false);
 
   // small toast for feedback (undo/redo)
   const [toast, setToast] = useState<string | null>(null);
@@ -278,6 +281,14 @@ export default function App() {
             setAll(done);
             play("click", false);
             showToast(done ? "Marked all done" : "Marked all active", 1000);
+
+            if (done) {
+              setCelebrate(true);
+              play("celebrate-pro", true);
+              haptic([50, 30, 50]);
+              showToast(" ❤️‍🔥🔥 YOOOOOO lesgooo all tasks completed~ You're a legend 🎊🫡", 2000);
+              setTimeout(() => setCelebrate(false), 2000);
+            }
           }}
         />
 
@@ -290,8 +301,11 @@ export default function App() {
               toggle(id);
               
               if (!wasDone) {
+                setCelebrate(true);
                 play("celebrate", true);
+                haptic([50, 30, 50]);
                 showToast("Yayyyyy lesgoooo task completed weeeee 🎉", 1400);
+                setTimeout(() => setCelebrate(false), 2000);
               } else {
                 play("click", false);
                 showToast("Marked as not done", 900)
@@ -314,11 +328,14 @@ export default function App() {
           <div>{stats.total} {stats.total == 1 ? "item" : "items"}</div>
           <div> Have a nice day :)</div>
           <div>Made by reindeer</div>
-          <div> Version 1.4.1</div>
+          <div> Version 1.4.2</div>
         </footer>
       </div>
 
       <ReminderManager todos={todos} enabled={remindersEnabled} />
+
+      {/* Celebration overlay */}
+      {celebrate && <CelebrateOverlay />}
 
       {/* Toast: top-right, subtle */}
       {toast && (

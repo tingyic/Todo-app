@@ -1,5 +1,4 @@
-type SoundName = "add" | "delete" | "done" | "undo" | "redo" | "error" | "click" | "celebrate";
-
+type SoundName = "add" | "delete" | "done" | "undo" | "redo" | "error" | "click" | "celebrate" | "celebrate-pro";
 
 const ctxRef: { ctx: AudioContext | null } = { ctx: null };
 
@@ -19,7 +18,7 @@ function getAudioContext(): AudioContext {
   return ctxRef.ctx!;
 }
 
-function playSound(name: SoundName, volume = 0.12) {
+function playSound(name: SoundName, volume = 0.2) {
   try {
     const ctx = getAudioContext();
     if (ctx.state === "suspended") {
@@ -29,7 +28,7 @@ function playSound(name: SoundName, volume = 0.12) {
     const now = ctx.currentTime;
 
     // helper to create an oscillator with gain envelope
-    const makeTone = (freqStart: number, freqEnd: number, type: OscillatorType, dur = 0.12, offset = 0) => {
+    const makeTone = (freqStart: number, freqEnd: number, type: OscillatorType, dur = 0.2, offset = 0) => {
       const t0 = now + offset;
       const gain = ctx.createGain();
       gain.gain.setValueAtTime(0.0001, t0);
@@ -78,11 +77,17 @@ function playSound(name: SoundName, volume = 0.12) {
       case "click":
         makeTone(1200, 1200, "square", 0.06, 0);
         break;
-
       case "celebrate":
         makeTone(880, 1100, "triangle", 0.14, 0);
         makeTone(1100, 1400, "triangle", 0.12, 0.06);
         makeTone(1400, 1760, "triangle", 0.12, 0.12); 
+        break;
+      case "celebrate-pro":
+        makeTone(880, 1100, "triangle", 0.14, 0);
+        makeTone(1100, 1400, "triangle", 0.12, 0.06);
+        makeTone(1400, 1760, "triangle", 0.12, 0.12);
+        makeTone(1760, 2000, "sine", 0.12, 0.18);
+        makeTone(2000, 2200, "sine", 0.12, 0.24);
         break;
     }
   } catch {
@@ -90,7 +95,7 @@ function playSound(name: SoundName, volume = 0.12) {
   }
 }
 
-function haptic(pattern: number | number[] = 35) {
+export function haptic(pattern: number | number[] = 35) {
   try {
     const nav = navigator as Navigator & { vibrate?: (pattern: number | number[]) => unknown };
     if (typeof nav.vibrate === "function") nav.vibrate(pattern);
