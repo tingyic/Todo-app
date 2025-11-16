@@ -578,3 +578,74 @@ button.clear-completed.btn-danger:active {
   transition: opacity 160ms ease, transform 160ms ease;
   will-change: opacity, transform;
 }
+
+/* dust animation for todo-item */
+.todo-item {
+  transition: transform 180ms ease, opacity 180ms ease;
+  will-change: transform, opacity, filter;
+}
+
+/* dust: disperse, rotate, blur, fade out */
+@keyframes dustFly {
+  0% {
+    opacity: 1;
+    transform: translateY(0) translateX(0) rotate(0deg) scale(1);
+    filter: blur(0);
+  }
+  40% {
+    transform: translateY(-8px) translateX(var(--dx, 10px)) rotate(var(--r, 12deg)) scale(0.95);
+  }
+  100% {
+    opacity: 0;
+    transform: translateY(-80px) translateX(var(--dx, 40px)) rotate(var(--r, 54deg)) scale(0.1);
+    filter: blur(6px) saturate(80%);
+  }
+}
+
+.todo-item.dust {
+  animation: dustFly 0.85s cubic-bezier(.2,.9,.2,1) forwards;
+  transform-origin: center center;
+}
+
+.todo-item.dust::after,
+.todo-item.dust::before {
+  content: "";
+  position: absolute;
+  pointer-events: none;
+}
+
+.todo-item.dust::after {
+  width: 6px;
+  height: 6px;
+  left: 20%;
+  top: 20%;
+  background: radial-gradient(circle, #ffd700 20%, transparent 60%);
+  border-radius: 50%;
+  box-shadow:
+    8px 4px 0 0 #ff6b6b,
+    -10px -4px 0 0 #6bffb2,
+    14px -6px 0 0 #6b83ff;
+  opacity: 0.95;
+  animation: specks 0.9s ease-out forwards;
+}
+
+@keyframes specks {
+  0% { transform: translateY(0) translateX(0) scale(1); opacity: 1; filter: blur(0); }
+  60% { transform: translateY(-30px) translateX(20px) scale(0.8); opacity: 0.9; }
+  100% { transform: translateY(-90px) translateX(60px) scale(0.3); opacity: 0; filter: blur(5px); }
+}
+
+/* screen shake for the whole page when celebrating/clearing */
+.celebrate-shake, .celebrate-shake body, .celebrate-shake #root {
+  animation: pageShake 420ms ease-in-out;
+}
+
+@keyframes pageShake {
+  0% { transform: translateX(0) }
+  10% { transform: translateX(-6px) rotate(-0.4deg) }
+  30% { transform: translateX(6px) rotate(0.4deg) }
+  50% { transform: translateX(-4px) rotate(-0.2deg) }
+  70% { transform: translateX(4px) rotate(0.2deg) }
+  100% { transform: translateX(0) rotate(0) }
+}
+

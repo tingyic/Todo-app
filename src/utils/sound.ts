@@ -1,4 +1,4 @@
-type SoundName = "add" | "delete" | "done" | "undo" | "redo" | "error" | "click" | "celebrate" | "celebrate-pro";
+type SoundName = "add" | "delete" | "done" | "undo" | "redo" | "error" | "click" | "celebrate" | "celebrate-pro"| "whoosh";
 
 const ctxRef: { ctx: AudioContext | null } = { ctx: null };
 
@@ -89,6 +89,73 @@ function playSound(name: SoundName, volume = 0.2) {
         makeTone(1760, 2000, "sine", 0.12, 0.18);
         makeTone(2000, 2200, "sine", 0.12, 0.24);
         break;
+      case "whoosh": {
+        const masterGain = ctx.createGain();
+        const masterLevel = volume * 5;
+        masterGain.gain.setValueAtTime(masterLevel, now);
+        masterGain.connect(ctx.destination);
+
+        const sampleRate = ctx.sampleRate;
+        const length = Math.floor(sampleRate * 1.2);
+        const noiseBuf = ctx.createBuffer(1, length, sampleRate);
+        const data = noiseBuf.getChannelData(0);
+        for (let i = 0; i < length; i++) {
+          data[i] = (Math.random() * 2 - 1) * (1 - i / length) * 0.6;
+        }
+        const noiseSrc = ctx.createBufferSource();
+        noiseSrc.buffer = noiseBuf;
+
+        const noiseFilter = ctx.createBiquadFilter();
+        noiseFilter.type = "bandpass";
+        noiseFilter.Q.value = 0.7;
+        noiseFilter.frequency.setValueAtTime(2200, now);
+
+        noiseFilter.frequency.exponentialRampToValueAtTime(300, now + 0.9);
+
+        const hp = ctx.createBiquadFilter();
+        hp.type = "highpass";
+        hp.frequency.setValueAtTime(400, now);
+        hp.frequency.exponentialRampToValueAtTime(60, now + 0.65);
+
+        const noiseGain = ctx.createGain();
+        noiseGain.gain.setValueAtTime(0.0001, now);
+        noiseGain.gain.exponentialRampToValueAtTime(Math.max(0.0001, volume), now + 0.03);
+        noiseGain.gain.exponentialRampToValueAtTime(0.0001, now + 0.9);
+
+        noiseSrc.connect(noiseFilter);
+        noiseFilter.connect(hp);
+        hp.connect(noiseGain);
+        noiseGain.connect(masterGain);
+
+        const rumble = ctx.createOscillator();
+        rumble.type = "sine";
+        rumble.frequency.setValueAtTime(60, now);
+        const rumbleGain = ctx.createGain();
+        rumbleGain.gain.setValueAtTime(0.0001, now);
+
+        rumbleGain.gain.exponentialRampToValueAtTime(Math.max(0.0001, volume * 0.35), now + 0.05);
+        rumbleGain.gain.exponentialRampToValueAtTime(0.0001, now + 0.9);
+
+        const lowpass = ctx.createBiquadFilter();
+        lowpass.type = "lowpass";
+        lowpass.frequency.setValueAtTime(300, now);
+
+        rumble.connect(lowpass);
+        lowpass.connect(rumbleGain);
+        rumbleGain.connect(masterGain);
+
+        noiseSrc.start(now);
+        noiseSrc.stop(now + 1.05);
+        rumble.start(now);
+        rumble.stop(now + 1.05);
+
+        // cleanup
+        setTimeout(() => {
+          try { noiseSrc.disconnect(); noiseFilter.disconnect(); hp.disconnect(); noiseGain.disconnect(); rumble.disconnect(); rumbleGain.disconnect(); lowpass.disconnect(); masterGain.disconnect(); } catch { /* empty */ }
+        }, 1400);
+
+        break;
+      }
     }
   } catch {
     // ignore failures silently (older browsers, permissions)

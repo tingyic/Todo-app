@@ -9,6 +9,7 @@ type Props = {
   onToggle: (id: string, createNext?: boolean | null) => void; // createNext overrides global setting
   onRemove: (id: string) => void;
   onUpdate: (id: string, patch: Partial<Todo>) => void;
+  isDusting?: boolean;
 };
 
 function recurrenceHasWeekdays(r?: Todo["recurrence"]): r is (Recurrence & { weekdays?: number[] }) {
@@ -32,7 +33,7 @@ function recurrenceLabel(r?: Todo["recurrence"]) {
   return "";
 }
 
-export default function TodoItem({ index, todo, onToggle, onRemove, onUpdate }: Props) {
+export default function TodoItem({ index, todo, onToggle, onRemove, onUpdate, isDusting = false, }: Props) {
   const [editing, setEditing] = useState(false);
 
   const [draft, setDraft] = useState(() => ({
@@ -170,7 +171,7 @@ export default function TodoItem({ index, todo, onToggle, onRemove, onUpdate }: 
   return (
     <div
       ref={rootRef}
-      className={`todo-item ${todo.done ? "todo-done" : ""} ${leaving ? "leaving" : ""}`}
+      className={`todo-item ${todo.done ? "todo-done" : ""} ${leaving ? "leaving" : ""} ${isDusting ? "dust" : ""}`}
       style={cssVars}
     >
       <div className="todo-col-checkbox">

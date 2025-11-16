@@ -96,6 +96,10 @@ export default function App() {
 
   const [celebrate, setCelebrate] = useState(false);
 
+  // Thanos snap effect for clear completed tasks
+  const [dustingIds, setDustingIds] = useState<Set<string>>(new(Set));
+  const DUST_DURATION = 900;
+
   // small toast for feedback (undo/redo)
   const [toast, setToast] = useState<string | null>(null);
   const toastTimerRef = useRef<number | null>(null);
@@ -273,9 +277,33 @@ export default function App() {
           sortBy={sortBy}
           setSortBy={setSortBy}
           clearCompleted={() => {
-            clearCompleted();
-            play("delete", false);
-            showToast("Cleared completed", 1000);
+            // find completed IDs
+            const completedIds = todos.filter(t => t.done).map(t => t.id);
+            if (completedIds.length === 0) {
+              showToast("No completed tasks to clear", 1000);
+              play("error", false);
+              return;
+            }
+
+            // stage them for dust animation
+            setDustingIds(new Set(completedIds));
+            // give immediate feedback
+            play("whoosh", false);
+            haptic([20, 10, 20]);
+
+            // show a small whoosh toast
+            showToast(`Clearing ${completedIds.length} completed…`, 1000);
+
+            // after dust animation finishes, actually clear them
+            window.setTimeout(() => {
+              // clear the backups / actual removal
+              clearCompleted(); // call your hook to remove completed items from state
+              // cleanup animation flags
+              setDustingIds(new Set());
+              // final success hint
+              play("delete", false);
+              showToast("Completed tasks cleared ✨", 1400);
+            }, DUST_DURATION);
           }}
           markAll={done => {
             setAll(done);
@@ -295,6 +323,7 @@ export default function App() {
         <main>
           <TodoList
             todos={visible}
+            dustingIds={dustingIds}
             onToggle={(id: string, createNext?: boolean | null) => {
               const t = todos.find(x => x.id === id);
               const wasDone = !!t?.done;
@@ -326,7 +355,7 @@ export default function App() {
           <div>{stats.total} {stats.total == 1 ? "item" : "items"}</div>
           <div> Have a nice day :)</div>
           <div>Made by reindeer</div>
-          <div> Version 1.4.3</div>
+          <div> Version 1.4.4</div>
         </footer>
       </div>
 
