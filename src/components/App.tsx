@@ -295,17 +295,15 @@ export default function App() {
         <main>
           <TodoList
             todos={visible}
-            onToggle={(id: string) => {
+            onToggle={(id: string, createNext?: boolean | null) => {
               const t = todos.find(x => x.id === id);
               const wasDone = !!t?.done;
-              toggle(id);
+              toggle(id, createNext);
               
               if (!wasDone) {
-                setCelebrate(true);
                 play("celebrate", true);
                 haptic([50, 30, 50]);
                 showToast("Yayyyyy lesgoooo task completed weeeee 🎉", 1400);
-                setTimeout(() => setCelebrate(false), 2000);
               } else {
                 play("click", false);
                 showToast("Marked as not done", 900)
@@ -328,7 +326,7 @@ export default function App() {
           <div>{stats.total} {stats.total == 1 ? "item" : "items"}</div>
           <div> Have a nice day :)</div>
           <div>Made by reindeer</div>
-          <div> Version 1.4.2</div>
+          <div> Version 1.4.3</div>
         </footer>
       </div>
 
