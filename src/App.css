@@ -563,7 +563,7 @@ button.clear-completed.btn-danger:active {
 /* make inline confirm buttons look stable and not jitter */
 .todo-col-actions { display:flex; flex-direction:column; align-items:flex-end; gap:8px; }
 
-/* prefer single-line for action buttons when there's space; they will still wrap if space is tight */
+/* prefer single-line for action buttons when there's space; will still wrap if space is tight */
 .todo-col-actions button {
   white-space: nowrap;
   width: auto;
@@ -571,7 +571,6 @@ button.clear-completed.btn-danger:active {
   box-sizing: border-box;
 }
 
-/* if you want the confirm area to animate slightly on open */
 .todo-col-actions > div {
   display: flex;
   gap: 8px;

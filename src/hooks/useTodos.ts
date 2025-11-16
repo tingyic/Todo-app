@@ -1,6 +1,7 @@
 import { useEffect, useReducer, useRef, useState } from "react";
 import type { Todo, Recurrence } from "../types";
 import { parseLocalDateTime } from "../utils/dates";
+import { play } from "../utils/sound";
 
 const LOCAL_KEY = "todoapp:v1";
 
@@ -115,6 +116,7 @@ export function useTodos() {
     setUndoCount(past.length);
     setRedoCount(futureRef.current.length);
     dispatch({ type: "INIT", todos: prev });
+    play("undo", true);
   };
 
   // redo: restore last snapshot from future -> push current to past
@@ -127,6 +129,7 @@ export function useTodos() {
     setUndoCount(pastRef.current.length);
     setRedoCount(fut.length);
     dispatch({ type: "INIT", todos: next });
+    play("redo", true);
   };
 
   // load from localStorage on mount

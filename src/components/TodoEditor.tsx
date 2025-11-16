@@ -1,5 +1,6 @@
 import { useState } from "react";
 import type { Recurrence } from "../types";
+import { play } from "../utils/sound";
 
 type Props = {
   onAdd: (payload: {
@@ -8,7 +9,7 @@ type Props = {
     due?: string | null;
     priority?: "high" | "medium" | "low";
     recurrence?: Recurrence | null;
-    reminders?: number[]; // NEW: array of minutes before due, e.g. [30,5]
+    reminders?: number[]; // array of minutes before due
   }) => void;
 };
 
@@ -24,7 +25,7 @@ export default function TodoEditor({ onAdd }: Props) {
   const [interval, setInterval] = useState<number>(1);
   const [weekdays, setWeekdays] = useState<number[]>([]);
 
-  // NEW: reminders UI state (minutes before due)
+  // reminders UI state (minutes before due)
   const [reminderSelect, setReminderSelect] = useState<number | "">(5);
   const [reminders, setReminders] = useState<number[]>([]);
 
@@ -76,6 +77,9 @@ export default function TodoEditor({ onAdd }: Props) {
       recurrence,
       reminders: reminders.length ? reminders : undefined, // include reminders
     });
+
+    // feedback
+    play("add", true);
 
     // reset
     setText("");

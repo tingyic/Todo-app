@@ -4,6 +4,7 @@ import TodoEditor from "./TodoEditor";
 import TodoList from "./TodoList";
 import Toolbar from "./Toolbar";
 import ReminderManager from "./ReminderManager";
+import { play, isSoundEnabled, setSoundEnabled } from "../utils/sound";
 
 export default function App() {
   const {
@@ -84,6 +85,14 @@ export default function App() {
     try { localStorage.setItem("todo-reminders-enabled", remindersEnabled ? "1" : "0"); } catch { /* empty */ }
   }, [remindersEnabled]);
 
+  // Sound toggle (backed by utils)
+  const [soundEnabled, setSoundEnabledState] = useState<boolean>(() => {
+    try { return isSoundEnabled(); } catch { return true; }
+  });
+  useEffect(() => {
+    try { setSoundEnabled(soundEnabled); } catch { /* empty */ }
+  }, [soundEnabled]);
+
   // small toast for feedback (undo/redo)
   const [toast, setToast] = useState<string | null>(null);
   const toastTimerRef = useRef<number | null>(null);
@@ -99,16 +108,18 @@ export default function App() {
     }, ms);
   }
 
-  // handlers that check availability before acting and show toast
+  // handlers that check availability before acting and show toast + sound/haptic
   function handleUndo() {
     if (!canUndo) return;
     undo();
     showToast("Undone");
+    play("undo", true);
   }
   function handleRedo() {
     if (!canRedo) return;
     redo();
     showToast("Redone");
+    play("redo", true);
   }
 
   useEffect(() => {
@@ -128,19 +139,39 @@ export default function App() {
         if (canUndo) {
           undo();
           showToast("Undone");
+          play("undo", true);
         }
-      } else if ( (mod && shift && key === "z") || (mod && key === "y") ) {
+      } else if ((mod && shift && key === "z") || (mod && key === "y")) {
         // Ctrl/Cmd+Shift+Z OR Ctrl/Cmd+Y -> redo
         e.preventDefault();
         if (canRedo) {
           redo();
           showToast("Redone");
+          play("redo", true);
         }
       }
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [undo, redo, canUndo, canRedo]);
+
+  // UI handlers for toggles that play a subtle click sound
+  function toggleTheme() {
+    setTheme(t => {
+      const next = t === "light" ? "dark" : "light";
+      play("click", false);
+      showToast(next === "dark" ? "Dark theme" : "Light theme", 900);
+      return next;
+    });
+  }
+  function toggleReminders() {
+    setRemindersEnabled(r => {
+      const next = !r;
+      play("click", false);
+      showToast(next ? "Reminders on" : "Reminders off", 900);
+      return next;
+    });
+  }
 
   return (
     <div className="min-h-screen bg-app-root flex items-start justify-center py-12 px-4">
@@ -177,7 +208,7 @@ export default function App() {
 
             {/* THEME TOGGLE */}
             <button
-              onClick={() => setTheme(t => (t === "light" ? "dark" : "light"))}
+              onClick={toggleTheme}
               aria-label="Toggle theme"
               className="btn-plain"
               title="Toggle theme"
@@ -189,7 +220,7 @@ export default function App() {
             {/* REMINDERS toggle */}
             <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
               <button
-                onClick={() => setRemindersEnabled(e => !e)}
+                onClick={toggleReminders}
                 className="btn-plain"
                 title={remindersEnabled ? "Disable reminders" : "Enable reminders"}
                 style={{ padding: "6px 10px" }}
@@ -200,10 +231,36 @@ export default function App() {
                 {remindersEnabled ? "Per-task reminders enabled" : "Reminders disabled"}
               </div>
             </div>
+
+            {/* SOUND toggle */}
+            <div style={{ display: "flex", gap: 8, alignItems: "center", marginLeft: 6 }}>
+              <button
+                onClick={() => {
+                  setSoundEnabledState(s => {
+                    const next = !s;
+                    // write to storage happens in effect
+                    // give quick feedback
+                    play(next ? "click" : "error", false);
+                    showToast(next ? "Sound on" : "Sound off", 900);
+                    return next;
+                  });
+                }}
+                className="btn-plain"
+                title={soundEnabled ? "Disable sounds" : "Enable sounds"}
+                style={{ padding: "6px 10px" }}
+              >
+                {soundEnabled ? "🔊 Sound" : "🔇 Sound"}
+              </button>
+            </div>
           </div>
         </header>
 
-        <TodoEditor onAdd={add} />
+        <TodoEditor onAdd={payload => {
+          // call add, play add sound and show toast briefly
+          add(payload);
+          play("add", false);
+          showToast("Task added", 900);
+        }} />
 
         <Toolbar
           filter={filter}
@@ -212,19 +269,43 @@ export default function App() {
           setQuery={setQuery}
           sortBy={sortBy}
           setSortBy={setSortBy}
-          clearCompleted={clearCompleted}
-          markAll={setAll}
+          clearCompleted={() => {
+            clearCompleted();
+            play("delete", false);
+            showToast("Cleared completed", 1000);
+          }}
+          markAll={done => {
+            setAll(done);
+            play("click", false);
+            showToast(done ? "Marked all done" : "Marked all active", 1000);
+          }}
         />
 
         <main>
-          <TodoList todos={visible} onToggle={toggle} onRemove={remove} onUpdate={update} />
+          <TodoList
+            todos={visible}
+            onToggle={(id: string) => {
+              toggle(id);
+              play("done", false);
+            }}
+            onRemove={id => {
+              remove(id);
+              play("delete", true);
+              showToast("Deleted", 900);
+            }}
+            onUpdate={(id, patch) => {
+              update(id, patch);
+              play("click", false);
+              showToast("Saved", 800);
+            }}
+          />
         </main>
 
         <footer className="mt-6 flex items-center justify-between text-sm text-app-muted">
           <div>{stats.total} {stats.total == 1 ? "item" : "items"}</div>
           <div> Have a nice day :)</div>
           <div>Made by reindeer</div>
-          <div> Version 1.3</div>
+          <div> Version 1.4</div>
         </footer>
       </div>
 
