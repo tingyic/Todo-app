@@ -355,7 +355,7 @@ export default function App() {
           <div>{stats.total} {stats.total == 1 ? "item" : "items"}</div>
           <div> Have a nice day :)</div>
           <div>Made by reindeer</div>
-          <div> Version 1.4.4</div>
+          <div> Version 1.5</div>
         </footer>
       </div>
 

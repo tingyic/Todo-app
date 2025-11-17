@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import type { Todo, Priority, Recurrence } from "../types";
+import type { Todo, Priority, Recurrence, Subtask } from "../types";
 import { formatLocalDateTime, parseLocalDateTime } from "../utils/dates";
 import { play } from "../utils/sound";
 
@@ -11,6 +11,10 @@ type Props = {
   onUpdate: (id: string, patch: Partial<Todo>) => void;
   isDusting?: boolean;
 };
+
+function makeId() {
+  return `${Date.now()}-${Math.floor(Math.random() * 1e6)}`;
+}
 
 function recurrenceHasWeekdays(r?: Todo["recurrence"]): r is (Recurrence & { weekdays?: number[] }) {
   if (!r) return false;
@@ -43,6 +47,14 @@ export default function TodoItem({ index, todo, onToggle, onRemove, onUpdate, is
     priority: todo.priority as Priority,
     reminders: (todo.reminders ?? []) as number[],
   }));
+
+  // subtask editing UI (only used while editing)
+  const [subtaskDraft, setSubtaskDraft] = useState("");
+  const [subtaskPriority, setSubtaskPriority] = useState<Priority>("medium");
+  const [subtaskDue, setSubtaskDue] = useState("");
+  const [subtaskReminderSelect, setSubtaskReminderSelect] = useState<number | "">(5);
+  const [subtaskReminders, setSubtaskReminders] = useState<number[]>([]);
+  const [subtasksLocal, setSubtasksLocal] = useState<Subtask[]>(todo.subtasks ?? []);
 
   // recurrence editing state (in edit mode)
   const [isRecurring, setIsRecurring] = useState<boolean>(!!todo.recurrence);
@@ -77,6 +89,11 @@ export default function TodoItem({ index, todo, onToggle, onRemove, onUpdate, is
     };
   }, []);
 
+  // sync local subtasks if todo changes from outside
+  useEffect(() => {
+    setSubtasksLocal(todo.subtasks ?? []);
+  }, [todo.subtasks]);
+
   function toggleWeekday(d: number) {
     setWeekdays(prev => (prev.includes(d) ? prev.filter(x => x !== d) : [...prev, d].sort()));
   }
@@ -97,6 +114,46 @@ export default function TodoItem({ index, todo, onToggle, onRemove, onUpdate, is
     setDraft(d => ({ ...d, reminders: (d.reminders ?? []).filter(x => x !== m) }));
   }
 
+  function addSubtaskReminder() {
+    if (subtaskReminderSelect === "") return;
+    const m = Number(subtaskReminderSelect);
+    if (!Number.isFinite(m) || m < 0) return;
+    setSubtaskReminders(prev => prev.includes(m) ? prev : [...prev, m].sort((a,b)=>a-b));
+    setSubtaskReminderSelect("");
+  }
+  function removeSubtaskReminder(m: number) {
+    setSubtaskReminders(prev => prev.filter(x => x !== m));
+  }
+
+  function addSubtaskDraft() {
+    const trimmed = subtaskDraft.trim();
+    if (!trimmed) return;
+    const s: Subtask = {
+      id: makeId(),
+      text: trimmed,
+      done: false,
+      createdAt: Date.now(),
+      priority: subtaskPriority,
+      due: subtaskDue || null,
+      reminders: subtaskReminders.length ? subtaskReminders : undefined,
+    };
+    setSubtasksLocal(prev => [...prev, s]);
+    setSubtaskDraft("");
+    setSubtaskPriority("medium");
+    setSubtaskDue("");
+    setSubtaskReminders([]);
+    setSubtaskReminderSelect(5);
+  }
+
+  function removeSubtaskLocal(id: string) {
+    setSubtasksLocal(prev => prev.filter(x => x.id !== id));
+  }
+
+  function toggleSubtaskDone(id: string) {
+    const next = (todo.subtasks ?? []).map(s => s.id === id ? { ...s, done: !s.done } : s);
+    onUpdate(todo.id, { subtasks: next });
+  }
+  
   function save() {
     const recurrence: Recurrence | null = isRecurring
       ? freq === "daily"
@@ -113,6 +170,7 @@ export default function TodoItem({ index, todo, onToggle, onRemove, onUpdate, is
       priority: draft.priority,
       recurrence,
       reminders: draft.reminders?.length ? draft.reminders : undefined,
+      subtasks: subtasksLocal.length ? subtasksLocal : undefined,
     });
     setEditing(false);
     play("click");
@@ -165,7 +223,7 @@ export default function TodoItem({ index, todo, onToggle, onRemove, onUpdate, is
 
   const recLabel = recurrenceLabel(todo.recurrence);
 
-  // typed CSS var for --i (no any)
+  // typed CSS var for --i
   const cssVars = ({ ['--i']: index ?? 0 } as unknown) as React.CSSProperties & Record<string, number>;
 
   return (
@@ -205,6 +263,36 @@ export default function TodoItem({ index, todo, onToggle, onRemove, onUpdate, is
                 {todo.reminders.map(m => (
                   <div key={m} className="tag" style={{ padding: "4px 8px" }}>
                     {m === 0 ? "At due" : (m >= 60 ? `${m/60} hr` : `${m} min`)}
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* Subtasks list (view mode) */}
+            {todo.subtasks && todo.subtasks.length > 0 && (
+              <div style={{ marginTop: 10, display: "flex", flexDirection: "column", gap: 8 }}>
+                {todo.subtasks.map(s => (
+                  <div key={s.id} style={{ display: "flex", gap: 8, alignItems: "center", justifyContent: "space-between" }}>
+                    <div style={{ display: "flex", gap: 8, alignItems: "center", flex: 1 }}>
+                      <input 
+                        type="checkbox"
+                        checked={!!s.done}
+                        onChange={() => toggleSubtaskDone(s.id)}
+                        aria-label={`Toggle subtask ${s.text}`}
+                      />
+                      <div style={{ minWidth: 0 }}>
+                        <div style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{s.text}</div>
+                        <div style={{ fontSize: 12, color: "var(--app-muted)", marginTop: 3 }}>
+                          {s.due ? formatLocalDateTime(s.due) : ""}
+                          {s.priority ? ` • ${s.priority}` : ""}
+                          {s.reminders && s.reminders.length ? ` • ${s.reminders.length} rem` : ""}
+                        </div>
+                      </div>
+                    </div>
+
+                    <div style={{ display: "flex", gap: 8 }}>
+                      <button className="btn-plain" onClick={() => { /* quick delete subtask */ onUpdate(todo.id, { subtasks: (todo.subtasks ?? []).filter(x => x.id !== s.id) }); }} title="Delete subtask">X</button>
+                    </div>
                   </div>
                 ))}
               </div>
@@ -253,6 +341,8 @@ export default function TodoItem({ index, todo, onToggle, onRemove, onUpdate, is
           </>
         ) : (
           <>
+
+            {/* EDIT MODE */}
             <input className="editor-input" value={draft.text} onChange={(e) => setDraft(d => ({ ...d, text: e.target.value }))} />
 
             <div style={{ display: "flex", gap: 8, marginTop: 6, flexWrap: "wrap" }}>
@@ -349,6 +439,72 @@ export default function TodoItem({ index, todo, onToggle, onRemove, onUpdate, is
               )}
             </div>
 
+            {/* Subtasks editor */}
+            <div style={{ marginTop: 10, borderTop: "1px dashed var(--app-border)", paddingTop: 10 }}>
+              <div style={ {display: "flex", gap:8, alignItems: "center", flexWrap: "wrap" }}>
+                <input className="editor-input" placeholder="Subtask title (optional)" value={subtaskDraft} onChange={(e) => setSubtaskDraft(e.target.value)} style={{ flex: 1, minWidth: 180 }} onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); addSubtaskDraft(); } }} />
+                <select value={subtaskPriority} onChange={(e) => setSubtaskPriority(e.target.value as Priority)} className="editor-input" style={{ width: 110 }}>
+                  <option value="high">H</option>
+                  <option value="medium">M</option>
+                  <option value="low">L</option>
+                </select>
+                <input type="datetime-local" value={subtaskDue} onChange={(e) => setSubtaskDue(e.target.value)} className="editor-input" style={{ width: 220 }} />
+                <select value={subtaskReminderSelect} onChange={(e) => setSubtaskReminderSelect(e.target.value === "" ? "" : Number(e.target.value))} className="editor-input" style={{ width: 110 }}>
+                  <option value="">Reminder</option>
+                  <option value={60}>1 hr</option>
+                  <option value={30}>30 min</option>
+                  <option value={10}>10 min</option>
+                  <option value={5}>5 min</option>
+                  <option value={1}>1 min</option>
+                  <option value={0}>At due</option>
+                </select>
+                <button type="button" className="btn-plain" onClick={addSubtaskReminder}>Add reminder</button>
+                <button type="button" className="btn-plain" onClick={addSubtaskDraft}>Add subtask</button>
+                </div>
+
+                {/* show subtask reminder chips */}
+                {subtaskReminders.length > 0 && (
+                  <div style={{ display: "flex", gap: 8, marginTop: 6, flexWrap: "wrap"}}>
+                    {subtaskReminders.map(m => (
+                      <div key={m} style={{ display: "inline-flex", alignItems: "center", gap: 8, padding: "4px 8px", borderRadius: 999, border: "1px solid var(--app-border)", background: "var(--tag-bg)" }}>
+                        <span style={{ fontSize:12 }}>{m === 0 ? "At due" : (m >= 60 ? `${m/60} hr` : `${m} min`)}</span>
+                        <button type="button" onClick={() => removeSubtaskReminder(m)} className="btn-plain" style={{ padding: "4px 6px" }}>x</button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {/* current subtasks list (editable) */}
+                {subtasksLocal.length > 0 && (
+                  <div style={{ marginTop: 10, display: "flex", flexDirection: "column", gap: 8 }}>
+                    {subtasksLocal.map(s => (
+                      <div key={s.id} style={{ display: "flex", gap: 8, alignItems: "center", justifyContent: "space-between" }}>
+                        <div style={{ display: "flex", gap: 8, alignItems: "center", flex: 1 }}>
+                          <input type="checkbox" checked={!!s.done} onChange={() => {
+                            setSubtasksLocal(prev => prev.map(x => x.id === s.id ? { ...x, done: !x.done } : x));
+                          }} />
+                          <div style={{ flex: 1 }}>
+                            <input value={s.text} onChange={(e) => setSubtasksLocal(prev => prev.map(x => x.id === s.id ? { ...x, text: e.target.value } : x))} className="editor-input" />
+                            <div style={{ fontSize: 12, color: "var(--app-muted)", marginTop: 4 }}>
+                              <select value={s.priority ?? "medium"} onChange={(e) => setSubtasksLocal(prev => prev.map(x => x.id === s.id ? { ...x, priority: e.target.value as Priority } : x))} className="editor-input" style={{ width: 120 }}>
+                                <option value="high">High</option>
+                                <option value="medium">Medium</option>
+                                <option value="low">Low</option>
+                              </select>
+                              <input type="datetime-local" value={s.due ?? ""} onChange={(e) => setSubtasksLocal(prev => prev.map(x => x.id === s.id ? { ...x, due: e.target.value || null } : x))} className="editor-input" style={{ width: 220, marginLeft: 8 }} />
+                            </div>
+                          </div>
+                        </div>
+
+                        <div style={{ display: "flex", gap: 8 }}>
+                          <button className="btn-plain" onClick={() => removeSubtaskLocal(s.id)}>Delete</button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div> 
+
             <div style={{ marginTop: 8 }}>
               <button onClick={save} className="btn-plain">Save</button>
               <button onClick={() => { setEditing(false); play("click"); }} className="btn-plain" style={{ marginLeft: 8 }}>Cancel</button>
@@ -364,6 +520,7 @@ export default function TodoItem({ index, todo, onToggle, onRemove, onUpdate, is
               setEditing(true);
               setDraft({ text: todo.text, due: todo.due ?? "", tags: todo.tags.join(", "), priority: todo.priority, reminders: todo.reminders ?? [] });
               // initialize recurrence edit state
+              setSubtasksLocal(todo.subtasks ?? []);
               setIsRecurring(!!todo.recurrence);
               setFreq((todo.recurrence?.freq) ?? "daily");
               setInterval((todo.recurrence?.interval) ?? 1);
