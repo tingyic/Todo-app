@@ -649,3 +649,37 @@ button.clear-completed.btn-danger:active {
   100% { transform: translateX(0) rotate(0) }
 }
 
+.subtask-title.prio-high { color: var(--prio-high); }
+.subtask-title.prio-medium { color: var(--prio-medium); }
+.subtask-title.prio-low { color: var(--prio-low); }
+
+.subtask-done {
+  color: var(--app-muted);
+  text-decoration: line-through;
+}
+
+.priority-pill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 4px 8px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 600;
+  min-width: 28px;
+  box-sizing: border-box;
+}
+
+.priority-pill.prio-high { color: var(--prio-high); background: var(--prio-high-bg); }
+.priority-pill.prio-medium { color: var(--prio-medium); background: var(--prio-medium-bg); }
+.priority-pill.prio-low { color: var(--prio-low); background: var(--prio-low-bg); }
+
+.subtask-title.subtask-done,
+.todo-item.todo-done .subtask-title,
+.todo-item.todo-done .priority-pill,
+.subtask-done + .priority-pill {
+  color: var(--app-muted);
+  background: transparent;
+  border-color: transparent;
+  text-decoration: line-through;
+}

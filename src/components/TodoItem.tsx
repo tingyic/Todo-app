@@ -56,6 +56,11 @@ export default function TodoItem({ index, todo, onToggle, onRemove, onUpdate, is
   const [subtaskReminders, setSubtaskReminders] = useState<number[]>([]);
   const [subtasksLocal, setSubtasksLocal] = useState<Subtask[]>(todo.subtasks ?? []);
 
+  const cleanedSubtasks = subtasksLocal;
+  const [subtaskRemSelects, setSubtaskRemSelects] = useState<Record<string, number | "">>({});
+
+  const [subtaskDeleteConfirm, setSubtaskDeleteConfirm] = useState<Record<string, boolean>>({});
+
   // recurrence editing state (in edit mode)
   const [isRecurring, setIsRecurring] = useState<boolean>(!!todo.recurrence);
   const [freq, setFreq] = useState<Recurrence["freq"]>(todo.recurrence?.freq ?? "daily");
@@ -118,7 +123,7 @@ export default function TodoItem({ index, todo, onToggle, onRemove, onUpdate, is
     if (subtaskReminderSelect === "") return;
     const m = Number(subtaskReminderSelect);
     if (!Number.isFinite(m) || m < 0) return;
-    setSubtaskReminders(prev => prev.includes(m) ? prev : [...prev, m].sort((a,b)=>a-b));
+    setSubtaskReminders(prev => (prev.includes(m) ? prev : [...prev, m].sort((a, b) => a - b)));
     setSubtaskReminderSelect("");
   }
   function removeSubtaskReminder(m: number) {
@@ -133,11 +138,17 @@ export default function TodoItem({ index, todo, onToggle, onRemove, onUpdate, is
       text: trimmed,
       done: false,
       createdAt: Date.now(),
-      priority: subtaskPriority,
-      due: subtaskDue || null,
-      reminders: subtaskReminders.length ? subtaskReminders : undefined,
-    };
-    setSubtasksLocal(prev => [...prev, s]);
+      ...(subtaskPriority ? { priority: subtaskPriority } : {}),
+      ...(subtaskDue ? { due: subtaskDue } : {}),
+      ...(subtaskReminders.length ? { reminders: subtaskReminders.slice() } : {}),
+    } as unknown as Subtask;
+
+    setSubtasksLocal(prev => {
+      const next = [...prev, s];
+      onUpdate(todo.id, { subtasks: next, done: false });
+      return next;
+    });
+
     setSubtaskDraft("");
     setSubtaskPriority("medium");
     setSubtaskDue("");
@@ -145,15 +156,58 @@ export default function TodoItem({ index, todo, onToggle, onRemove, onUpdate, is
     setSubtaskReminderSelect(5);
   }
 
-  function removeSubtaskLocal(id: string) {
-    setSubtasksLocal(prev => prev.filter(x => x.id !== id));
+  function requestSubtaskDelete(id: string) {
+    setSubtaskDeleteConfirm(prev => ({ ...prev, [id]: true }));
+  }
+
+  function cancelSubtaskDelete(id: string) {
+    setSubtaskDeleteConfirm(prev => {
+      const next = { ...prev };
+      delete next[id];
+      return next;
+    });
+  }
+
+  function confirmSubtaskDelete(id: string, isEditingMode: boolean) {
+    if (isEditingMode) {
+      setSubtasksLocal(prev => prev.filter(s => s.id !== id));
+    } else {
+      onUpdate(todo.id, { subtasks: (todo.subtasks ?? []).filter(s => s.id !== id) });
+    }
+
+    play("delete", true);
+    cancelSubtaskDelete(id);
   }
 
   function toggleSubtaskDone(id: string) {
-    const next = (todo.subtasks ?? []).map(s => s.id === id ? { ...s, done: !s.done } : s);
+    const current = todo.subtasks ?? [];
+
+    const next = current.map(s => {
+      if (s.id !== id) return s;
+      const currentDone = !!s.done || !!todo.done;
+      return { ...s, done: !currentDone };
+    });
+
     onUpdate(todo.id, { subtasks: next });
+
+    const allDone = next.length > 0 && next.every(s => s.done);
+    if (allDone && !todo.done) {
+      onToggle(todo.id);
+      play("done", true);
+      return;
+    }
+
+    const toggled = next.find(s => s.id === id);
+    if (todo.done && toggled && !toggled.done) {
+      onUpdate(todo.id, { done: false, subtasks: next });
+      play("undo", true);
+      return;
+    }
+
+    if (toggled?.done) play("done", true);
+    else play("undo", true);
   }
-  
+
   function save() {
     const recurrence: Recurrence | null = isRecurring
       ? freq === "daily"
@@ -170,7 +224,7 @@ export default function TodoItem({ index, todo, onToggle, onRemove, onUpdate, is
       priority: draft.priority,
       recurrence,
       reminders: draft.reminders?.length ? draft.reminders : undefined,
-      subtasks: subtasksLocal.length ? subtasksLocal : undefined,
+      subtasks: subtasksLocal.length ? cleanedSubtasks : undefined,
     });
     setEditing(false);
     play("click");
@@ -194,10 +248,14 @@ export default function TodoItem({ index, todo, onToggle, onRemove, onUpdate, is
 
     // show inline confirm to let user choose
     setConfirmOpen(true);
+
+    if ((todo.subtasks ?? []).length) {
+      const allDoneSubs = (todo.subtasks ?? []).map(s => ({ ...s, done: true }));
+      onUpdate(todo.id, { subtasks: allDoneSubs });
+    }
   }
 
   function handleDeleteClick() {
-    // start leaving animation & call onRemove after match time (220ms)
     setLeaving(true);
     setDeleteConfirmOpen(false);
     play("delete", true);
@@ -222,9 +280,7 @@ export default function TodoItem({ index, todo, onToggle, onRemove, onUpdate, is
   }, [expired, todo.done]);
 
   const recLabel = recurrenceLabel(todo.recurrence);
-
-  // typed CSS var for --i
-  const cssVars = ({ ['--i']: index ?? 0 } as unknown) as React.CSSProperties & Record<string, number>;
+  const cssVars = ({ ["--i"]: index ?? 0 } as unknown) as React.CSSProperties & Record<string, number>;
 
   return (
     <div
@@ -233,12 +289,7 @@ export default function TodoItem({ index, todo, onToggle, onRemove, onUpdate, is
       style={cssVars}
     >
       <div className="todo-col-checkbox">
-        <input
-          aria-label="Toggle todo"
-          type="checkbox"
-          checked={todo.done}
-          onChange={handleCheckboxClick}
-        />
+        <input aria-label="Toggle todo" type="checkbox" checked={todo.done} onChange={handleCheckboxClick} />
       </div>
 
       <div className="todo-col-content">
@@ -262,7 +313,7 @@ export default function TodoItem({ index, todo, onToggle, onRemove, onUpdate, is
               <div style={{ marginTop: 8, display: "flex", gap: 8, flexWrap: "wrap" }}>
                 {todo.reminders.map(m => (
                   <div key={m} className="tag" style={{ padding: "4px 8px" }}>
-                    {m === 0 ? "At due" : (m >= 60 ? `${m/60} hr` : `${m} min`)}
+                    {m === 0 ? "At due" : (m >= 60 ? `${m / 60} hr` : `${m} min`)}
                   </div>
                 ))}
               </div>
@@ -271,52 +322,83 @@ export default function TodoItem({ index, todo, onToggle, onRemove, onUpdate, is
             {/* Subtasks list (view mode) */}
             {todo.subtasks && todo.subtasks.length > 0 && (
               <div style={{ marginTop: 10, display: "flex", flexDirection: "column", gap: 8 }}>
-                {todo.subtasks.map(s => (
-                  <div key={s.id} style={{ display: "flex", gap: 8, alignItems: "center", justifyContent: "space-between" }}>
-                    <div style={{ display: "flex", gap: 8, alignItems: "center", flex: 1 }}>
-                      <input 
-                        type="checkbox"
-                        checked={!!s.done}
-                        onChange={() => toggleSubtaskDone(s.id)}
-                        aria-label={`Toggle subtask ${s.text}`}
-                      />
-                      <div style={{ minWidth: 0 }}>
-                        <div style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{s.text}</div>
-                        <div style={{ fontSize: 12, color: "var(--app-muted)", marginTop: 3 }}>
-                          {s.due ? formatLocalDateTime(s.due) : ""}
-                          {s.priority ? ` • ${s.priority}` : ""}
-                          {s.reminders && s.reminders.length ? ` • ${s.reminders.length} rem` : ""}
+                {todo.subtasks.map(s => {
+                  const subDone = !!s.done || !!todo.done;
+                  return (
+                    <div key={s.id} style={{ display: "flex", gap: 8, alignItems: "center", justifyContent: "space-between" }}>
+                      <div style={{ display: "flex", gap: 8, alignItems: "center", flex: 1 }}>
+                        <input
+                          type="checkbox"
+                          checked={subDone}
+                          onChange={() => toggleSubtaskDone(s.id)}
+                          aria-label={`Toggle subtask ${s.text}`}
+                        />
+                        <div style={{ minWidth: 0, display: "flex", flexDirection: "column", gap: 4 }}>
+                          <div
+                            className={`subtask-title prio-${s.priority ?? "medium"} ${subDone ? "subtask-done" : ""}`}
+                            style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}
+                          >
+                            {s.text}
+                          </div>
+                          <div style={{ fontSize: 12, color: "var(--app-muted)", marginTop: 3 }}>
+                            {(s.due ? formatLocalDateTime(s.due as string) : "")}
+                            {(s.reminders && s.reminders.length) ? (
+                              <span style={{ display: "inline-flex", gap: 6, alignItems: "center", marginLeft: 6 }}>
+                                {(s.reminders ?? []).map(m => (
+                                  <span key={m} className="tag" style={{ padding: "4px 8px", fontSize: 12 }}>
+                                    {m === 0 ? "At due" : (m >= 60 ? `${m/60} hr` : `${m} min`)}
+                                  </span>
+                                ))}
+                              </span>
+                            ) : ""}
+                          </div>
                         </div>
                       </div>
-                    </div>
 
-                    <div style={{ display: "flex", gap: 8 }}>
-                      <button className="btn-plain" onClick={() => { /* quick delete subtask */ onUpdate(todo.id, { subtasks: (todo.subtasks ?? []).filter(x => x.id !== s.id) }); }} title="Delete subtask">X</button>
+                      <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                        <div className={`priority-pill prio-${s.priority ?? "medium"}`} 
+                          title={`Priority: ${((s.priority ?? "medium").slice(0,1).toUpperCase() + (s.priority ?? "medium").slice(1))}`}
+                          style={{ fontSize: 12, padding: "4px 8px", borderRadius: 999 }}>
+                          {s.priority ? (s.priority[0].toUpperCase() + s.priority.slice(1)) : "Medium"}
+                        </div>
+                        {!subtaskDeleteConfirm[s.id] ? (
+                          <button
+                            className="btn-danger"
+                            onClick={() => requestSubtaskDelete(s.id)}
+                            title="Delete subtask"
+                          >
+                            X
+                          </button>
+                        ) : (
+                          <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                            <button
+                              className="btn-danger"
+                              onClick={() => confirmSubtaskDelete(s.id, false)}
+                              title={`Confirm delete ${s.text}`}
+                              aria-label={`Confirm delete ${s.text}`}
+                            >
+                              Delete this?
+                            </button>
+                            <button className="btn-plain" onClick={() => cancelSubtaskDelete(s.id)}>Cancel</button>
+                          </div>
+                        )}
+                      </div>
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             )}
 
             {/* inline confirm UI (visible when user checks recurring todo) */}
             {confirmOpen && (
               <div style={{ marginTop: 8, display: "flex", gap: 8 }}>
-                <button
-                  className="btn-plain"
-                  onClick={() => { setConfirmOpen(false); onToggle(todo.id, true); play("done", true); }}
-                >
+                <button className="btn-plain" onClick={() => { setConfirmOpen(false); onToggle(todo.id, true); play("done", true); }}>
                   Create next
                 </button>
-                <button
-                  className="btn-plain"
-                  onClick={() => { setConfirmOpen(false); onToggle(todo.id, false); play("done", true); }}
-                >
+                <button className="btn-plain" onClick={() => { setConfirmOpen(false); onToggle(todo.id, false); play("done", true); }}>
                   Mark done permanently
                 </button>
-                <button
-                  className="btn-plain"
-                  onClick={() => { setConfirmOpen(false); /* cancel */ play("click"); }}
-                >
+                <button className="btn-plain" onClick={() => { setConfirmOpen(false); play("click"); }}>
                   Cancel
                 </button>
               </div>
@@ -341,25 +423,12 @@ export default function TodoItem({ index, todo, onToggle, onRemove, onUpdate, is
           </>
         ) : (
           <>
-
             {/* EDIT MODE */}
-            <input className="editor-input" value={draft.text} onChange={(e) => setDraft(d => ({ ...d, text: e.target.value }))} />
+            <input className="editor-input" placeholder="Task name" value={draft.text} onChange={(e) => setDraft(d => ({ ...d, text: e.target.value }))} />
 
             <div style={{ display: "flex", gap: 8, marginTop: 6, flexWrap: "wrap" }}>
-              <input
-                type="datetime-local"
-                className="editor-input"
-                value={draft.due}
-                onChange={(e) => setDraft(d => ({ ...d, due: e.target.value }))}
-                style={{ minWidth: 200 }}
-              />
-              <input
-                className="editor-input"
-                placeholder="tags: a, b"
-                value={draft.tags}
-                onChange={(e) => setDraft(d => ({ ...d, tags: e.target.value }))}
-                style={{ minWidth: 150 }}
-              />
+              <input type="datetime-local" className="editor-input" value={draft.due} onChange={(e) => setDraft(d => ({ ...d, due: e.target.value }))} style={{ minWidth: 200 }} />
+              <input className="editor-input" placeholder="tags: a, b" value={draft.tags} onChange={(e) => setDraft(d => ({ ...d, tags: e.target.value }))} style={{ minWidth: 150 }} />
               <select value={draft.priority} onChange={(e) => setDraft(d => ({ ...d, priority: e.target.value as Priority }))} className="editor-input" style={{ width: 120 }}>
                 <option value="high">High</option>
                 <option value="medium">Medium</option>
@@ -369,12 +438,7 @@ export default function TodoItem({ index, todo, onToggle, onRemove, onUpdate, is
 
             {/* Reminders editor */}
             <div style={{ marginTop: 8, display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-              <select
-                value={reminderSelect}
-                onChange={(e) => setReminderSelect(e.target.value === "" ? "" : Number(e.target.value))}
-                className="editor-input"
-                style={{ width: 140 }}
-              >
+              <select value={reminderSelect} onChange={(e) => setReminderSelect(e.target.value === "" ? "" : Number(e.target.value))} className="editor-input" style={{ width: 140 }}>
                 <option value="">Add reminder</option>
                 <option value={60}>1 hr</option>
                 <option value={30}>30 min</option>
@@ -411,25 +475,12 @@ export default function TodoItem({ index, todo, onToggle, onRemove, onUpdate, is
                     <option value="monthly">Monthly</option>
                   </select>
 
-                  <input
-                    className="editor-input"
-                    style={{ width: 80 }}
-                    type="number"
-                    min={1}
-                    value={interval}
-                    onChange={(e) => setInterval(parseInt(e.target.value || "1", 10))}
-                  />
+                  <input className="editor-input" style={{ width: 80 }} type="number" min={1} value={interval} onChange={(e) => setInterval(parseInt(e.target.value || "1", 10))} />
 
                   {freq === "weekly" && (
                     <div style={{ display: "flex", gap: 6 }}>
-                      {["S","M","T","W","T","F","S"].map((label, i) => (
-                        <button
-                          key={i}
-                          type="button"
-                          onClick={() => toggleWeekday(i)}
-                          className="btn-plain"
-                          style={{ padding: "6px 8px", background: weekdays.includes(i) ? "#eef" : undefined }}
-                        >
+                      {["S", "M", "T", "W", "T", "F", "S"].map((label, i) => (
+                        <button key={i} type="button" onClick={() => toggleWeekday(i)} className="btn-plain" style={{ padding: "6px 8px", background: weekdays.includes(i) ? "#eef" : undefined }}>
                           {label}
                         </button>
                       ))}
@@ -441,12 +492,12 @@ export default function TodoItem({ index, todo, onToggle, onRemove, onUpdate, is
 
             {/* Subtasks editor */}
             <div style={{ marginTop: 10, borderTop: "1px dashed var(--app-border)", paddingTop: 10 }}>
-              <div style={ {display: "flex", gap:8, alignItems: "center", flexWrap: "wrap" }}>
+              <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
                 <input className="editor-input" placeholder="Subtask title (optional)" value={subtaskDraft} onChange={(e) => setSubtaskDraft(e.target.value)} style={{ flex: 1, minWidth: 180 }} onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); addSubtaskDraft(); } }} />
                 <select value={subtaskPriority} onChange={(e) => setSubtaskPriority(e.target.value as Priority)} className="editor-input" style={{ width: 110 }}>
-                  <option value="high">H</option>
-                  <option value="medium">M</option>
-                  <option value="low">L</option>
+                  <option value="high">High</option>
+                  <option value="medium">Medium</option>
+                  <option value="low">Low</option>
                 </select>
                 <input type="datetime-local" value={subtaskDue} onChange={(e) => setSubtaskDue(e.target.value)} className="editor-input" style={{ width: 220 }} />
                 <select value={subtaskReminderSelect} onChange={(e) => setSubtaskReminderSelect(e.target.value === "" ? "" : Number(e.target.value))} className="editor-input" style={{ width: 110 }}>
@@ -460,50 +511,133 @@ export default function TodoItem({ index, todo, onToggle, onRemove, onUpdate, is
                 </select>
                 <button type="button" className="btn-plain" onClick={addSubtaskReminder}>Add reminder</button>
                 <button type="button" className="btn-plain" onClick={addSubtaskDraft}>Add subtask</button>
+              </div>
+
+              {/* show subtask reminder chips */}
+              {subtaskReminders.length > 0 && (
+                <div style={{ display: "flex", gap: 8, marginTop: 6, flexWrap: "wrap" }}>
+                  {subtaskReminders.map(m => (
+                    <div key={m} style={{ display: "inline-flex", alignItems: "center", gap: 8, padding: "4px 8px", borderRadius: 999, border: "1px solid var(--app-border)", background: "var(--tag-bg)" }}>
+                      <span style={{ fontSize: 12 }}>{m === 0 ? "At due" : (m >= 60 ? `${m / 60} hr` : `${m} min`)}</span>
+                      <button type="button" onClick={() => removeSubtaskReminder(m)} className="btn-plain" style={{ padding: "4px 6px" }}>x</button>
+                    </div>
+                  ))}
                 </div>
+              )}
 
-                {/* show subtask reminder chips */}
-                {subtaskReminders.length > 0 && (
-                  <div style={{ display: "flex", gap: 8, marginTop: 6, flexWrap: "wrap"}}>
-                    {subtaskReminders.map(m => (
-                      <div key={m} style={{ display: "inline-flex", alignItems: "center", gap: 8, padding: "4px 8px", borderRadius: 999, border: "1px solid var(--app-border)", background: "var(--tag-bg)" }}>
-                        <span style={{ fontSize:12 }}>{m === 0 ? "At due" : (m >= 60 ? `${m/60} hr` : `${m} min`)}</span>
-                        <button type="button" onClick={() => removeSubtaskReminder(m)} className="btn-plain" style={{ padding: "4px 6px" }}>x</button>
-                      </div>
-                    ))}
-                  </div>
-                )}
+              {/* current subtasks list (editable) */}
+              {subtasksLocal.length > 0 && (
+                <div style={{ marginTop: 10, display: "flex", flexDirection: "column", gap: 8 }}>
+                  {subtasksLocal.map(s => (
+                    <div key={s.id} style={{ display: "flex", gap: 8, alignItems: "center", justifyContent: "space-between" }}>
+                      <div style={{ display: "flex", gap: 8, alignItems: "center", flex: 1 }}>
+                        <input type="checkbox" checked={!!s.done} onChange={() => setSubtasksLocal(prev => prev.map(x => x.id === s.id ? { ...x, done: !x.done } : x))} />
+                        <div style={{ flex: 1 }}>
+                          <input value={s.text} onChange={(e) => setSubtasksLocal(prev => prev.map(x => x.id === s.id ? { ...x, text: e.target.value } : x))} className="editor-input" />
+                          <div style={{ fontSize: 12, color: "var(--app-muted)", marginTop: 4 }}>
+                            <select 
+                              value={s.priority ?? "medium"}
+                              onChange={(e) => setSubtasksLocal(prev => prev.map(x => x.id === s.id ? { ...x, priority: e.target.value as Priority } : x))}
+                              className="editor-input"
+                              style={{ width: 120 }}
+                            >
+                              <option value="high">High</option>
+                              <option value="medium">Medium</option>
+                              <option value="low">Low</option>
+                            </select>
+                            <input
+                              type="datetime-local"
+                              value={s.due ?? ""}
+                              onChange={(e) => setSubtasksLocal(prev => prev.map(x => x.id === s.id ? { ...x, due: e.target.value || null } : x))}
+                              className="editor-input"
+                              style={{ width: 220, marginLeft: 8 }}
+                            />
 
-                {/* current subtasks list (editable) */}
-                {subtasksLocal.length > 0 && (
-                  <div style={{ marginTop: 10, display: "flex", flexDirection: "column", gap: 8 }}>
-                    {subtasksLocal.map(s => (
-                      <div key={s.id} style={{ display: "flex", gap: 8, alignItems: "center", justifyContent: "space-between" }}>
-                        <div style={{ display: "flex", gap: 8, alignItems: "center", flex: 1 }}>
-                          <input type="checkbox" checked={!!s.done} onChange={() => {
-                            setSubtasksLocal(prev => prev.map(x => x.id === s.id ? { ...x, done: !x.done } : x));
-                          }} />
-                          <div style={{ flex: 1 }}>
-                            <input value={s.text} onChange={(e) => setSubtasksLocal(prev => prev.map(x => x.id === s.id ? { ...x, text: e.target.value } : x))} className="editor-input" />
-                            <div style={{ fontSize: 12, color: "var(--app-muted)", marginTop: 4 }}>
-                              <select value={s.priority ?? "medium"} onChange={(e) => setSubtasksLocal(prev => prev.map(x => x.id === s.id ? { ...x, priority: e.target.value as Priority } : x))} className="editor-input" style={{ width: 120 }}>
-                                <option value="high">High</option>
-                                <option value="medium">Medium</option>
-                                <option value="low">Low</option>
+                            {/* Reminder controls */}
+                            <div style={{ display: "inline-flex", gap: 8, alignItems: "center", marginLeft: 8 }}>
+                              <select 
+                                value={subtaskRemSelects[s.id] ?? ""}
+                                onChange={(e) => {
+                                  const val = e.target.value === "" ? "" : Number(e.target.value);
+                                  setSubtaskRemSelects(prev => ({ ...prev, [s.id]: val }));
+                                }}
+                                className="editor-input"
+                                style={{ width: 120 }}
+                              >
+                                <option value="">Reminder</option>
+                                <option value={60}>1 hr</option>
+                                <option value={30}>30 min</option>
+                                <option value={10}>10 min</option>
+                                <option value={5}>5 min</option>
+                                <option value={1}>1 min</option>
+                                <option value={0}>At due</option>
                               </select>
-                              <input type="datetime-local" value={s.due ?? ""} onChange={(e) => setSubtasksLocal(prev => prev.map(x => x.id === s.id ? { ...x, due: e.target.value || null } : x))} className="editor-input" style={{ width: 220, marginLeft: 8 }} />
+
+                              <button 
+                                type="button"
+                                className="btn-plain"
+                                onClick={() => {
+                                  setSubtasksLocal(prev => prev.map(x => {
+                                    if (x.id !== s.id) return x;
+                                    const sel = subtaskRemSelects[s.id];
+                                    if (sel === "" || sel == null) return x;
+                                    const cur = x.reminders ?? [];
+                                    if (cur.includes(sel)) {
+                                      setSubtaskRemSelects(prev => ({ ...prev, [s.id]: "" }));
+                                      return x;
+                                    }
+                                    const nextRem = [...cur, sel].sort((a, b) => a - b);
+                                    setSubtaskRemSelects(prev => ({ ...prev, [s.id]: "" }));
+                                    return { ...x, reminders: nextRem } as Subtask;
+                                  }));
+                                }}
+                              >
+                                Add reminder
+                              </button>
+                            </div>
+
+                            {/* show current reminders as chips with remove */}
+                            <div style={{ marginTop: 6, display: "flex", gap: 8, flexWrap: "wrap" }}>
+                              {(s.reminders ?? []).map(m => (
+                                <div key={m} style={{ display: "inline-flex", alignItems: "center", gap: 8, padding: "4px 8px", borderRadius: 999, border: "1px solid var(--app-border)", background: "var(--tag-bg)" }}>
+                                  <span style={{ fontSize: 12 }}>{m === 0 ? "At due" : (m >= 60 ? `${m/60} hr` : `${m} min`)}</span>
+                                  <button
+                                    type="button"
+                                    className="btn-plain"
+                                    onClick={() => setSubtasksLocal(prev => prev.map(x => x.id === s.id ? ({ ...x, reminders: (x.reminders ?? []).filter(r => r !== m) }) : x))}
+                                    style={{ padding: "4px 6px" }}
+                                  >
+                                    X
+                                  </button>
+                                </div>
+                              ))}
                             </div>
                           </div>
                         </div>
-
-                        <div style={{ display: "flex", gap: 8 }}>
-                          <button className="btn-plain" onClick={() => removeSubtaskLocal(s.id)}>Delete</button>
-                        </div>
                       </div>
-                    ))}
-                  </div>
-                )}
-              </div> 
+
+                      <div style={{ display: "flex", gap: 8 }}>
+                        {!subtaskDeleteConfirm[s.id] ? (
+                          <button className="btn-danger" onClick={() => requestSubtaskDelete(s.id)}>Delete</button>
+                        ) : (
+                          <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                            <button
+                              className="btn-danger"
+                              onClick={() => confirmSubtaskDelete(s.id, true)}
+                              title="Confirm delete subtask"
+                              aria-label={`Confirm delete ${s.text}`}
+                            >
+                              Delete this?
+                            </button>
+                            <button className="btn-plain" onClick={() => cancelSubtaskDelete(s.id)}>Cancel</button>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
 
             <div style={{ marginTop: 8 }}>
               <button onClick={save} className="btn-plain">Save</button>
