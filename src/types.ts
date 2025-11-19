@@ -5,7 +5,18 @@ export type Recurrence =
   | { freq: "weekly"; interval?: number; weekdays?: number[] } // weekdays: 0(Sun)-6(Sat)
   | { freq: "monthly"; interval?: number; dayOfMonth?: number }; // dayOfMonth optional
 
-export type Todo = {
+export type Subtask = {
+  id: string;
+  text: string;
+  done: boolean;
+  createdAt: number;
+
+  priority?: Priority;
+  due?: string | null;
+  reminders?: number[];
+};
+
+  export type Todo = {
   id: string;
   text: string;
   done: boolean;
@@ -15,4 +26,5 @@ export type Todo = {
   priority: Priority;
   recurrence?: Recurrence | null;
   reminders?: number[];
+  subtasks?: Subtask[];
 };

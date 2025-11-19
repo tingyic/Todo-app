@@ -9,7 +9,7 @@ type Props = {
     due?: string | null;
     priority?: "high" | "medium" | "low";
     recurrence?: Recurrence | null;
-    reminders?: number[]; // array of minutes before due
+    reminders?: number[]; // minutes before due
   }) => void;
 };
 
@@ -50,8 +50,8 @@ export default function TodoEditor({ onAdd }: Props) {
 
   function submit(e?: React.FormEvent) {
     e?.preventDefault();
-    const t = text.trim();
-    if (!t) return;
+    const trimmed = text.trim();
+    if (!trimmed) return;
     const tagsArr = tags.split(",").map(s => s.trim()).filter(Boolean);
     let recurrence: Recurrence | null = null;
 
@@ -70,12 +70,12 @@ export default function TodoEditor({ onAdd }: Props) {
     }
 
     onAdd({
-      text: t,
+      text: trimmed,
       tags: tagsArr.length ? tagsArr : undefined,
       due: due || null,
       priority,
       recurrence,
-      reminders: reminders.length ? reminders : undefined, // include reminders
+      reminders: reminders.length ? reminders : undefined,
     });
 
     // feedback
