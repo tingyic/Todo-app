@@ -227,6 +227,12 @@ export function useTodos() {
     if (!t.done && t.recurrence && willCreate) {
       const nextDue = computeNextDue(t);
       if (nextDue) {
+        const cloneSubtasks = (t.subtasks ?? []).map(s => ({
+          ...s,
+          id: uid(),
+          done: false,
+          createdAt: Date.now(),
+        }));
         const newTodo: Todo = {
           id: uid(),
           text: t.text,
@@ -236,6 +242,8 @@ export function useTodos() {
           tags: t.tags.slice(),
           priority: t.priority,
           recurrence: t.recurrence ? { ...t.recurrence } : null,
+          reminders: t.reminders ? t.reminders.slice() : undefined,
+          subtasks: cloneSubtasks.length ? cloneSubtasks : undefined,
         };
         dispatch({ type: "ADD", todo: newTodo });
       }

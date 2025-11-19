@@ -113,6 +113,7 @@ export default function TodoItem({ index, todo, onToggle, onRemove, onUpdate, is
       return { ...d, reminders: [...cur, m].sort((a, b) => a - b) };
     });
     setReminderSelect("");
+    play("click");
   }
 
   function removeReminderFromDraft(m: number) {
@@ -125,6 +126,7 @@ export default function TodoItem({ index, todo, onToggle, onRemove, onUpdate, is
     if (!Number.isFinite(m) || m < 0) return;
     setSubtaskReminders(prev => (prev.includes(m) ? prev : [...prev, m].sort((a, b) => a - b)));
     setSubtaskReminderSelect("");
+    play("click");
   }
   function removeSubtaskReminder(m: number) {
     setSubtaskReminders(prev => prev.filter(x => x !== m));
@@ -526,7 +528,7 @@ export default function TodoItem({ index, todo, onToggle, onRemove, onUpdate, is
             
             <div style={{ marginTop: 10, borderTop: "1px dashed var(--app-border)", paddingTop: 10 }}>
               <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-                <input className="editor-input" placeholder="Subtask title (optional)" value={subtaskDraft} onChange={(e) => setSubtaskDraft(e.target.value)} style={{ flex: 1, minWidth: 180 }} onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); addSubtaskDraft(); } }} />
+                <input className="editor-input" placeholder="Subtask title" value={subtaskDraft} onChange={(e) => setSubtaskDraft(e.target.value)} style={{ flex: 1, minWidth: 180 }} onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); addSubtaskDraft(); } }} />
                 <select value={subtaskPriority} onChange={(e) => setSubtaskPriority(e.target.value as Priority)} className="editor-input" style={{ width: 110 }}>
                   <option value="high">High</option>
                   <option value="medium">Medium</option>
@@ -630,6 +632,7 @@ export default function TodoItem({ index, todo, onToggle, onRemove, onUpdate, is
                                     }
                                     const nextRem = [...cur, sel].sort((a, b) => a - b);
                                     setSubtaskRemSelects(prev => ({ ...prev, [s.id]: "" }));
+                                    play("click");
                                     return { ...x, reminders: nextRem } as Subtask;
                                   }));
                                 }}

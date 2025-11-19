@@ -42,10 +42,12 @@ export default function TodoEditor({ onAdd }: Props) {
       return [...prev, m].sort((a, b) => a - b);
     });
     setReminderSelect("");
+    play("click");
   }
 
   function removeReminder(m: number) {
     setReminders(prev => prev.filter(x => x !== m));
+    play("click");
   }
 
   function submit(e?: React.FormEvent) {

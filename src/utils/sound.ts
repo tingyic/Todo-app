@@ -18,7 +18,7 @@ function getAudioContext(): AudioContext {
   return ctxRef.ctx!;
 }
 
-function playSound(name: SoundName, volume = 0.2) {
+async function playSound(name: SoundName, volume = 0.2) {
   try {
     const ctx = getAudioContext();
     if (ctx.state === "suspended") {
@@ -188,7 +188,6 @@ export function setSoundEnabled(v: boolean) {
   }
 }
 
-/** Play: will respect isSoundEnabled(); optionally vibrate as well */
 export function play(name: SoundName, doHaptic = false) {
   if (!isSoundEnabled()) return;
   playSound(name);
