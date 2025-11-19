@@ -510,6 +510,20 @@ export default function TodoItem({ index, todo, onToggle, onRemove, onUpdate, is
             </div>
 
             {/* Subtasks editor */}
+            {/* Subtask header & separator from main task edit mode */}
+            <div style={{ marginTop: 16 }} />
+
+            <div style={{ marginTop: 10, borderTop: "1px dashed var(--app-border)", paddingTop: 12 }}>
+              <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 12, marginBottom: 8 }}>
+                <div style={{ fontSize: 14, fontWeight: 600, color: "var(--app-text)" }}>
+                  Add / edit subtasks <span style={{ fontSize: 12, fontWeight: 400, color: "var(--app-muted)" }}>(optional)</span>
+                </div>
+                <div style={{ fontSize: 12, color: "var(--app-muted)" }}>
+                  Both main tasks and subtasks are saved when you press <em>Save</em>
+                </div>
+              </div>
+            </div>
+            
             <div style={{ marginTop: 10, borderTop: "1px dashed var(--app-border)", paddingTop: 10 }}>
               <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
                 <input className="editor-input" placeholder="Subtask title (optional)" value={subtaskDraft} onChange={(e) => setSubtaskDraft(e.target.value)} style={{ flex: 1, minWidth: 180 }} onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); addSubtaskDraft(); } }} />

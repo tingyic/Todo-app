@@ -354,7 +354,21 @@ export default function App() {
         <footer className="mt-6 flex items-center justify-between text-sm text-app-muted">
           <div>{stats.total} {stats.total == 1 ? "item" : "items"}</div>
           <div> Have a nice day :)</div>
-          <div>Made by reindeer</div>
+          <div>
+            Made by{" "}
+            <a 
+              href="https://www.youtube.com/watch?v=dQw4w9WgXcQ"
+              target="_blank"
+              rel="noopener noreferrer"
+              style={{
+                color: "inherit",
+                textDecoration: "none",
+                cursor: "pointer",
+              }}
+            >
+              reindeer
+            </a>
+          </div>
           <div> Version 1.5.2</div>
         </footer>
       </div>
