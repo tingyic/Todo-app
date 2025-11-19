@@ -282,6 +282,15 @@ export default function TodoItem({ index, todo, onToggle, onRemove, onUpdate, is
   const recLabel = recurrenceLabel(todo.recurrence);
   const cssVars = ({ ["--i"]: index ?? 0 } as unknown) as React.CSSProperties & Record<string, number>;
 
+  // progress bar for parent tasks with subtasks
+  const viewTotal = (todo.subtasks ?? []).length;
+  const viewDoneCount = todo.done ? viewTotal : (todo.subtasks ?? []).filter(s => !!s.done).length;
+  const viewPct = viewTotal ? Math.round((viewDoneCount / viewTotal) * 100) : 0;
+
+  const editTotal = subtasksLocal.length;
+  const editDoneCount = subtasksLocal.filter(s => !!s.done).length;
+  const editPct = editTotal ? Math.round((editDoneCount / editTotal) * 100) : 0;
+
   return (
     <div
       ref={rootRef}
@@ -322,6 +331,16 @@ export default function TodoItem({ index, todo, onToggle, onRemove, onUpdate, is
             {/* Subtasks list (view mode) */}
             {todo.subtasks && todo.subtasks.length > 0 && (
               <div style={{ marginTop: 10, display: "flex", flexDirection: "column", gap: 8 }}>
+                { /* Progress bar (view) */}
+                <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                  <div className="subtasks-progress" role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={viewPct} style={{ flex: 1 }}>
+                    <div className="subtasks-progress-fill" style={{ width: `${viewPct}%` }} />
+                  </div>
+                  <div style={{ minWidth: 56, textAlign: "right", fontSize: 12, color: "var(--app-muted)" }}>
+                    {viewDoneCount} / {viewTotal} • {viewPct}%
+                  </div>
+                </div>
+                
                 {todo.subtasks.map(s => {
                   const subDone = !!s.done || !!todo.done;
                   return (
@@ -528,6 +547,15 @@ export default function TodoItem({ index, todo, onToggle, onRemove, onUpdate, is
               {/* current subtasks list (editable) */}
               {subtasksLocal.length > 0 && (
                 <div style={{ marginTop: 10, display: "flex", flexDirection: "column", gap: 8 }}>
+                  {/* Progress bar (edit preview) */}
+                  <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                    <div className="subtasks-progress" role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={editPct} style={{ flex: 1 }}>
+                      <div className="subtasks-progress-fill" style={{ width: `${editPct}%` }} />
+                    </div>
+                    <div style={{ minWidth: 56, textAlign: "right", fontSize: 12, color: "var(--app-muted)" }}>
+                      {editDoneCount} / {editTotal} • {editPct}%
+                    </div>
+                  </div>
                   {subtasksLocal.map(s => (
                     <div key={s.id} style={{ display: "flex", gap: 8, alignItems: "center", justifyContent: "space-between" }}>
                       <div style={{ display: "flex", gap: 8, alignItems: "center", flex: 1 }}>
