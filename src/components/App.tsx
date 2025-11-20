@@ -1,4 +1,4 @@
-import { useMemo, useState, useEffect, useRef } from "react";
+import { useMemo, useState, useEffect, useRef, useCallback } from "react";
 import { useTodos } from "../hooks/useTodos";
 import CelebrateOverlay from "./CelebrationOverlay";
 import TodoEditor from "./TodoEditor";
@@ -22,6 +22,8 @@ export default function App() {
     canRedo,
   } = useTodos();
 
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  
   const [filter, setFilter] = useState<"all" | "active" | "completed">("all");
   const [query, setQuery] = useState("");
   const [sortBy, setSortBy] = useState<"created" | "due" | "priority">("created");
@@ -86,7 +88,7 @@ export default function App() {
     try { localStorage.setItem("todo-reminders-enabled", remindersEnabled ? "1" : "0"); } catch { /* empty */ }
   }, [remindersEnabled]);
 
-  // Sound toggle (backed by utils)
+  // Sound toggle
   const [soundEnabled, setSoundEnabledState] = useState<boolean>(() => {
     try { return isSoundEnabled(); } catch { return true; }
   });
@@ -104,7 +106,7 @@ export default function App() {
   const [toast, setToast] = useState<string | null>(null);
   const toastTimerRef = useRef<number | null>(null);
 
-  function showToast(msg: string, ms = 1400) {
+  const showToast = useCallback((msg: string, ms = 1400) => {
     setToast(msg);
     if (toastTimerRef.current) {
       window.clearTimeout(toastTimerRef.current);
@@ -113,7 +115,45 @@ export default function App() {
       setToast(null);
       toastTimerRef.current = null;
     }, ms);
-  }
+  }, []);
+
+  const toggleTheme = useCallback(() => {
+    setTheme(t => {
+      const next = t === "light" ? "dark" : "light";
+      play("click", false);
+      showToast(next === "dark" ? "Dark theme" : "Light theme", 900);
+      return next;
+    });
+  }, [showToast]);
+
+  const toggleReminders = useCallback(() => {
+    setRemindersEnabled(r => {
+      const next = !r;
+      play("click", false);
+      showToast(next ? "Reminders on" : "Reminders off", 900);
+      return next;
+    });
+  }, [showToast]);
+
+  const toggleSound = useCallback(() => {
+    setSoundEnabledState(s => {
+      const next = !s;
+      play(next ? "click" : "error", false);
+      showToast(next ? "Sound on" : "Sound off", 900);
+      return next;
+    });
+  }, [showToast]);
+
+  const setFilterWithFeedback = useCallback((f: "all" | "active" | "completed") => {
+    setFilter(f);
+    const msg = f === "all" 
+      ? "Filter: All tasks"
+      : f === "active" 
+      ? "Filter: Active tasks"
+      : "Filter: Completed tasks";
+    showToast(msg, 700);
+    play("click", false);
+  }, [showToast]);
 
   // handlers that check availability before acting and show toast + sound/haptic
   function handleUndo() {
@@ -157,28 +197,89 @@ export default function App() {
           play("redo", true);
         }
       }
+
+      switch (key) {
+        case "t": {
+          // Theme toggle (T for theme)
+          e.preventDefault();
+          toggleTheme();
+          break;
+        }
+        case "s": {
+          // Sound toggle (S for sound)
+          e.preventDefault();
+          toggleSound();
+          break;
+        }
+        case "a": {
+          // Reminder toggle (A for alarms)
+          e.preventDefault();
+          toggleReminders();
+          break;
+        }
+        case "j": {
+          // Filter: all
+          setFilterWithFeedback("all");
+          break;
+        }
+        case "k": {
+          // Filter: active tasks
+          e.preventDefault();
+          setFilterWithFeedback("active");
+          break;
+        }
+        case "l": {
+          // Filter: completed tasks
+          e.preventDefault();
+          setFilterWithFeedback("completed");
+          break;
+        }
+        case "arrowup": {
+          // move selection up in the visible task list
+          e.preventDefault();
+          if (!visible.length) return;
+          if (!selectedId) {
+            // select last
+            setSelectedId(visible[visible.length - 1].id);
+            showToast("Selected task", 700);
+            return;
+          }
+          const idx = visible.findIndex(t => t.id === selectedId);
+          if (idx === -1) {
+            setSelectedId(visible[0].id);
+            showToast("Selected task", 700);
+            return;
+          }
+          const prev = (idx - 1 + visible.length) % visible.length;
+          setSelectedId(visible[prev].id);
+          break;
+        }
+        case "arrowdown": {
+          // move selection down in the visible task list
+          e.preventDefault();
+          if (!visible.length) return;
+          if (!selectedId) {
+            setSelectedId(visible[0].id);
+            showToast("Selected task", 700);
+            return;
+          }
+          const idx = visible.findIndex(t => t.id === selectedId);
+          if (idx === -1) {
+            setSelectedId(visible[0].id);
+            showToast("Selected task", 700);
+            return;
+          }
+          const next = (idx + 1) % visible.length;
+          setSelectedId(visible[next].id);
+          break;
+        }
+        default:
+          break;
+      }
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [undo, redo, canUndo, canRedo]);
-
-  // UI handlers for toggles that play a subtle click sound
-  function toggleTheme() {
-    setTheme(t => {
-      const next = t === "light" ? "dark" : "light";
-      play("click", false);
-      showToast(next === "dark" ? "Dark theme" : "Light theme", 900);
-      return next;
-    });
-  }
-  function toggleReminders() {
-    setRemindersEnabled(r => {
-      const next = !r;
-      play("click", false);
-      showToast(next ? "Reminders on" : "Reminders off", 900);
-      return next;
-    });
-  }
+  }, [undo, redo, canUndo, canRedo, toggleTheme, toggleReminders, toggleSound, setFilterWithFeedback, showToast, visible, selectedId]);
 
   return (
     <div className="min-h-screen bg-app-root flex items-start justify-center py-12 px-4">
@@ -271,7 +372,7 @@ export default function App() {
 
         <Toolbar
           filter={filter}
-          setFilter={setFilter}
+          setFilter={setFilterWithFeedback}
           query={query}
           setQuery={setQuery}
           sortBy={sortBy}
@@ -324,6 +425,9 @@ export default function App() {
           <TodoList
             todos={visible}
             dustingIds={dustingIds}
+            selectedId={selectedId}
+            setSelectedId={setSelectedId}
+            showToast={showToast}
             onToggle={(id: string, createNext?: boolean | null) => {
               const t = todos.find(x => x.id === id);
               const wasDone = !!t?.done;
@@ -339,14 +443,15 @@ export default function App() {
               }
             }}
             onRemove={id => {
+              setSelectedId(prev => (prev === id ? null : prev));
               remove(id);
               play("delete", true);
               showToast("Deleted", 900);
             }}
-            onUpdate={(id, patch) => {
+            onUpdate={(id, patch, toastMsg) => {
               update(id, patch);
               play("click", false);
-              showToast("Saved", 800);
+              showToast(toastMsg ?? "Saved", 800);
             }}
           />
         </main>
@@ -369,7 +474,7 @@ export default function App() {
               reindeer
             </a>
           </div>
-          <div> Version 1.5.3</div>
+          <div> Version 1.6</div>
         </footer>
       </div>
 
