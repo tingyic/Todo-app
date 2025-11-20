@@ -49,6 +49,7 @@ export default function TodoItem({ index, todo, onToggle, onRemove, onUpdate, is
     tags: todo.tags.join(", "),
     priority: todo.priority as Priority,
     reminders: (todo.reminders ?? []) as number[],
+    notes: todo.notes ?? "",
   }));
 
   // subtask editing UI (only used while editing)
@@ -243,6 +244,7 @@ export default function TodoItem({ index, todo, onToggle, onRemove, onUpdate, is
       recurrence,
       reminders: draft.reminders?.length ? draft.reminders : undefined,
       subtasks: subtasksLocal.length ? cleanedSubtasks : undefined,
+      notes: draft.notes?.trim() ? draft.notes.trim() : undefined,
     });
     setEditing(false);
     play("click");
@@ -324,7 +326,7 @@ export default function TodoItem({ index, todo, onToggle, onRemove, onUpdate, is
       if (!editing) {
         e.preventDefault();
         setEditing(true);
-        setDraft({ text: todo.text, due: todo.due ?? "", tags: todo.tags.join(", "), priority: todo.priority, reminders: todo.reminders ?? [] });
+        setDraft({ text: todo.text, due: todo.due ?? "", tags: todo.tags.join(", "), priority: todo.priority, reminders: todo.reminders ?? [], notes: todo.notes ?? "" });
         setSubtasksLocal(todo.subtasks ?? []);
         setIsRecurring(!!todo.recurrence);
         setFreq((todo.recurrence?.freq) ?? "daily");
@@ -355,7 +357,7 @@ export default function TodoItem({ index, todo, onToggle, onRemove, onUpdate, is
       if (editing) {
         // cancels edit
         setEditing(false);
-        setDraft({ text: todo.text, due: todo.due ?? "", tags: todo.tags.join(", "), priority: todo.priority, reminders: todo.reminders ?? [] });
+        setDraft({ text: todo.text, due: todo.due ?? "", tags: todo.tags.join(", "), priority: todo.priority, reminders: todo.reminders ?? [], notes: todo.notes ?? "" });
         setSubtasksLocal(todo.subtasks ?? []);
         setSubtaskDraft("");
         setSubtaskRemSelects({});
@@ -427,6 +429,15 @@ export default function TodoItem({ index, todo, onToggle, onRemove, onUpdate, is
                 ))}
               </div>
             )}
+
+            {/* Notes preview (view-only) */}
+            {todo.notes ? (
+              <div style={{ marginTop: 10, padding: "8px 10px", borderRadius: 8, background: "var(--tag-bg)", border: "1px solid var(--app-border)" }}>
+                <div style={{ fontSize: 13, color: "var(--app-text)", whiteSpace: "pre-wrap", overflow: "hidden", maxHeight: 140 }}>
+                  {todo.notes}
+                </div>
+              </div>
+            ) : null}
 
             {/* Subtasks list (view mode) */}
             {todo.subtasks && todo.subtasks.length > 0 && (
@@ -608,6 +619,35 @@ export default function TodoItem({ index, todo, onToggle, onRemove, onUpdate, is
                   )}
                 </>
               )}
+            </div>
+
+            {/* Notes (edit-only) */}
+            <div style={{ marginTop: 10 }}>
+              <label style={{ display: "block", fontSize: 13, marginBottom: 6, color: "var(--app-muted)" }}>
+                Notes (optional)
+              </label>
+
+              <textarea
+                className="editor-input"
+                placeholder="Add description for this task... (saved when you press Save)"
+                value={draft.notes}
+                onChange={(e) => setDraft(d => ({ ...d, notes: e.target.value }))}
+                style={{ width: "100%", minHeight: 120, resize: "vertical", padding: 10 }}
+              />
+
+              <div style={{ marginTop: 8, display: "flex", gap: 8 }}>
+                <button
+                  type="button"
+                  className="btn-plain"
+                  onMouseDown={keepFocus}
+                  onClick={() => setDraft(d => ({ ...d, notes: ""}))}
+                >
+                  Clear notes
+                </button>
+                <div style={{ fontSize: 12, color: "var(--app-muted)", alignSelf: "center" }}>
+                  Clear then Save to remove note permanently.
+                </div>
+              </div>
             </div>
 
             {/* Subtasks editor */}
@@ -798,7 +838,7 @@ export default function TodoItem({ index, todo, onToggle, onRemove, onUpdate, is
           <>
             <button className="btn-plain" onClick={() => {
               setEditing(true);
-              setDraft({ text: todo.text, due: todo.due ?? "", tags: todo.tags.join(", "), priority: todo.priority, reminders: todo.reminders ?? [] });
+              setDraft({ text: todo.text, due: todo.due ?? "", tags: todo.tags.join(", "), priority: todo.priority, reminders: todo.reminders ?? [], notes: todo.notes ?? "" });
               // initialize recurrence edit state
               setSubtasksLocal(todo.subtasks ?? []);
               setIsRecurring(!!todo.recurrence);

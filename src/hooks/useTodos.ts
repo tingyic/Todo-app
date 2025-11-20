@@ -244,6 +244,7 @@ export function useTodos() {
           recurrence: t.recurrence ? { ...t.recurrence } : null,
           reminders: t.reminders ? t.reminders.slice() : undefined,
           subtasks: cloneSubtasks.length ? cloneSubtasks : undefined,
+          notes: t.notes,
         };
         dispatch({ type: "ADD", todo: newTodo });
       }

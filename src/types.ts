@@ -27,4 +27,5 @@ export type Subtask = {
   recurrence?: Recurrence | null;
   reminders?: number[];
   subtasks?: Subtask[];
+  notes?: string;
 };
