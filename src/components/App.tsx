@@ -1,11 +1,12 @@
+import { haptic, play, isSoundEnabled, setSoundEnabled } from "../utils/sound";
 import { useMemo, useState, useEffect, useRef, useCallback } from "react";
 import { useTodos } from "../hooks/useTodos";
 import CelebrateOverlay from "./CelebrationOverlay";
+import HelpButton from "./HelpButton";
+import ReminderManager from "./ReminderManager";
 import TodoEditor from "./TodoEditor";
 import TodoList from "./TodoList";
 import Toolbar from "./Toolbar";
-import ReminderManager from "./ReminderManager";
-import { haptic, play, isSoundEnabled, setSoundEnabled } from "../utils/sound";
 
 export default function App() {
   const {
@@ -108,14 +109,45 @@ export default function App() {
 
   const showToast = useCallback((msg: string, ms = 1400) => {
     setToast(msg);
+
+    try {
+      document.body.classList.add("toast-visible");
+    } catch {/* Empty */}
+
     if (toastTimerRef.current) {
       window.clearTimeout(toastTimerRef.current);
+      toastTimerRef.current = null;
     }
     toastTimerRef.current = window.setTimeout(() => {
       setToast(null);
       toastTimerRef.current = null;
+      try {
+        document.body.classList.remove("toast-visible");
+      } catch {/* Empty */}
     }, ms);
   }, []);
+
+  useEffect(() => {
+    if (toast) {
+      const t = window.setTimeout(() => {
+        const el = document.querySelector<HTMLElement>('.toast');
+        if (el) {
+          const height = el.getBoundingClientRect().height;
+          document.body.style.setProperty('--toast-offset', `${Math.ceil(height + 12)}px`);
+        } else {
+          document.body.style.setProperty('--toast-offset', `86px`);
+        }
+        document.body.classList.add('toast-visible');
+      }, 0);
+
+      return () => {
+        clearTimeout(t);
+      };
+    } else {
+      document.body.style.removeProperty('--toast-offset');
+      document.body.classList.remove('toast-visible');
+    }
+  }, [toast]);
 
   const toggleTheme = useCallback(() => {
     setTheme(t => {
@@ -474,7 +506,7 @@ export default function App() {
               reindeer
             </a>
           </div>
-          <div> Version 1.6.2</div>
+          <div> Version 1.6.3</div>
         </footer>
       </div>
 
@@ -486,6 +518,7 @@ export default function App() {
       {/* Toast: top-right, subtle */}
       {toast && (
         <div
+          className="toast"
           aria-live="polite"
           style={{
             position: "fixed",
@@ -504,6 +537,8 @@ export default function App() {
           {toast}
         </div>
       )}
+
+      <HelpButton />
     </div>
   );
 }
