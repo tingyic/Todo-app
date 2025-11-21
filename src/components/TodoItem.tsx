@@ -8,8 +8,11 @@ type Props = {
   todo: Todo;
   onToggle: (id: string, createNext?: boolean | null) => void; // createNext overrides global setting
   onRemove: (id: string) => void;
-  onUpdate: (id: string, patch: Partial<Todo>) => void;
+  onUpdate: (id: string, patch: Partial<Todo>, toastMsg?: string) => void;
   isDusting?: boolean;
+  isSelected?: boolean;
+  onSelect?: (id: string | null) => void;
+  showToast?: (msg: string, ms?: number) => void;
 };
 
 function makeId() {
@@ -37,7 +40,7 @@ function recurrenceLabel(r?: Todo["recurrence"]) {
   return "";
 }
 
-export default function TodoItem({ index, todo, onToggle, onRemove, onUpdate, isDusting = false, }: Props) {
+export default function TodoItem({ index, todo, onToggle, onRemove, onUpdate, isDusting = false, isSelected = false, onSelect, showToast }: Props) {
   const [editing, setEditing] = useState(false);
 
   const [draft, setDraft] = useState(() => ({
@@ -46,7 +49,12 @@ export default function TodoItem({ index, todo, onToggle, onRemove, onUpdate, is
     tags: todo.tags.join(", "),
     priority: todo.priority as Priority,
     reminders: (todo.reminders ?? []) as number[],
+    notes: todo.notes ?? "",
   }));
+
+  const [notesExpanded, setNotesExpanded] = useState(false);
+  const N_LINES = 3;
+  const N_CHARS = 200;
 
   // subtask editing UI (only used while editing)
   const [subtaskDraft, setSubtaskDraft] = useState("");
@@ -93,6 +101,12 @@ export default function TodoItem({ index, todo, onToggle, onRemove, onUpdate, is
       clearTimeout(t);
     };
   }, []);
+
+  useEffect(() => {
+    if (isSelected && rootRef.current) {
+      rootRef.current.focus();
+    }
+  }, [isSelected]);
 
   // sync local subtasks if todo changes from outside
   useEffect(() => {
@@ -147,7 +161,9 @@ export default function TodoItem({ index, todo, onToggle, onRemove, onUpdate, is
 
     setSubtasksLocal(prev => {
       const next = [...prev, s];
-      onUpdate(todo.id, { subtasks: next, done: false });
+      if (!editing) {
+        onUpdate(todo.id, { subtasks: next, done: false });
+      }
       return next;
     });
 
@@ -174,7 +190,7 @@ export default function TodoItem({ index, todo, onToggle, onRemove, onUpdate, is
     if (isEditingMode) {
       setSubtasksLocal(prev => prev.filter(s => s.id !== id));
     } else {
-      onUpdate(todo.id, { subtasks: (todo.subtasks ?? []).filter(s => s.id !== id) });
+      onUpdate(todo.id, { subtasks: (todo.subtasks ?? []).filter(s => s.id !== id) }, "Subtask deleted");
     }
 
     play("delete", true);
@@ -190,7 +206,13 @@ export default function TodoItem({ index, todo, onToggle, onRemove, onUpdate, is
       return { ...s, done: !currentDone };
     });
 
-    onUpdate(todo.id, { subtasks: next });
+    const toggled = next.find(s => s.id === id);
+
+    if (toggled?.done) {
+      onUpdate(todo.id, { subtasks: next }, "Subtask marked done");
+    } else {
+      onUpdate(todo.id, { subtasks: next }, "Subtask marked not done")
+    }
 
     const allDone = next.length > 0 && next.every(s => s.done);
     if (allDone && !todo.done) {
@@ -199,9 +221,8 @@ export default function TodoItem({ index, todo, onToggle, onRemove, onUpdate, is
       return;
     }
 
-    const toggled = next.find(s => s.id === id);
     if (todo.done && toggled && !toggled.done) {
-      onUpdate(todo.id, { done: false, subtasks: next });
+      onUpdate(todo.id, { done: false, subtasks: next }, "Subtask marked not done");
       play("undo", true);
       return;
     }
@@ -227,6 +248,7 @@ export default function TodoItem({ index, todo, onToggle, onRemove, onUpdate, is
       recurrence,
       reminders: draft.reminders?.length ? draft.reminders : undefined,
       subtasks: subtasksLocal.length ? cleanedSubtasks : undefined,
+      notes: draft.notes?.trim() ? draft.notes.trim() : undefined,
     });
     setEditing(false);
     play("click");
@@ -253,7 +275,7 @@ export default function TodoItem({ index, todo, onToggle, onRemove, onUpdate, is
 
     if ((todo.subtasks ?? []).length) {
       const allDoneSubs = (todo.subtasks ?? []).map(s => ({ ...s, done: true }));
-      onUpdate(todo.id, { subtasks: allDoneSubs });
+      onUpdate(todo.id, { subtasks: allDoneSubs }, "Subtasks marked done");
     }
   }
 
@@ -293,9 +315,110 @@ export default function TodoItem({ index, todo, onToggle, onRemove, onUpdate, is
   const editDoneCount = subtasksLocal.filter(s => !!s.done).length;
   const editPct = editTotal ? Math.round((editDoneCount / editTotal) * 100) : 0;
 
+  function keepFocus(e: React.MouseEvent) {
+    e.preventDefault();
+  }
+
+  // Keyboard handler for the root (when focused)
+  function handleRootKeyDown(e: React.KeyboardEvent) {
+    const target = e.target as HTMLElement | null;
+    if (target && (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable)) return;
+
+    const key = e.key;
+    if (key === "e") {
+      // enters edit mode
+      if (!editing) {
+        e.preventDefault();
+        setEditing(true);
+        setDraft({ text: todo.text, due: todo.due ?? "", tags: todo.tags.join(", "), priority: todo.priority, reminders: todo.reminders ?? [], notes: todo.notes ?? "" });
+        setSubtasksLocal(todo.subtasks ?? []);
+        setIsRecurring(!!todo.recurrence);
+        setFreq((todo.recurrence?.freq) ?? "daily");
+        setInterval((todo.recurrence?.interval) ?? 1);
+        setWeekdays(recurrenceHasWeekdays(todo.recurrence) ? (todo.recurrence!.weekdays ?? []) : []);
+        play("click");
+      }
+      return;
+    }
+
+    if (key === "Delete" || key === "Backspace") {
+      e.preventDefault();
+      if (!deleteConfirmOpen) {
+        // first press: triggers the delete prompt
+        setDeleteConfirmOpen(true);
+        play("click");
+        if (showToast) showToast("Press Delete/Backspace key or Delete button again to confirm", 1800);
+      } else {
+        // second press: actually delete
+        handleDeleteClick();
+      }
+      return;
+    }
+
+    if (key === "Escape") {
+      // cancels events
+      e.preventDefault();
+      if (editing) {
+        // cancels edit
+        setEditing(false);
+        setDraft({ text: todo.text, due: todo.due ?? "", tags: todo.tags.join(", "), priority: todo.priority, reminders: todo.reminders ?? [], notes: todo.notes ?? "" });
+        setSubtasksLocal(todo.subtasks ?? []);
+        setSubtaskDraft("");
+        setSubtaskRemSelects({});
+        setSubtaskDeleteConfirm({});
+        play("click");
+      } else if (deleteConfirmOpen) {
+        // cancels delete
+        setDeleteConfirmOpen(false);
+        play("click");
+      } else if (confirmOpen) {
+        // cancels confirm
+        setConfirmOpen(false);
+        play("click");
+      }
+      return;
+    }
+  }
+
+  // Click handler on root: select the task if user clicked empty space / background.
+  function handleRootClick(e: React.MouseEvent) {
+    const tgt = e.target as HTMLElement | null;
+    if (!tgt) return;
+    const tag = (tgt.tagName || "").toLowerCase();
+    const interactiveTags = ["button", "input", "select", "a", "textarea", "label"];
+    if (interactiveTags.includes(tag) || tgt.closest("button") || tgt.closest("a") || tgt.closest("input")) {
+      return;
+    }
+
+    if (onSelect) onSelect(todo.id);
+    if (rootRef.current) rootRef.current.focus();
+  }
+
+  const noteText = todo.notes ?? "";
+  const noteLines = noteText ? noteText.split(/\r?\n/) : [];
+  const hasManyLines = noteLines.length > N_LINES;
+  const isLongChars = noteText.length > N_CHARS;
+
+  const collapsedPreview = (() => {
+    if (!noteText) return "";
+    if (hasManyLines) {
+      const head = noteLines.slice(0, N_LINES).join("\n");
+      return noteLines.length > N_LINES ? head + "\n..." : head;
+    }
+    if (isLongChars) {
+      return noteText.slice(0, N_CHARS) + "...";
+    }
+    return noteText;
+  })();
+
+  const needsToggle = noteText.length > 0 && noteText !== collapsedPreview;
+
   return (
     <div
       ref={rootRef}
+      tabIndex={0}
+      onKeyDown={handleRootKeyDown}
+      onClick={handleRootClick}
       className={`todo-item ${todo.done ? "todo-done" : ""} ${leaving ? "leaving" : ""} ${isDusting ? "dust" : ""}`}
       style={cssVars}
     >
@@ -329,6 +452,36 @@ export default function TodoItem({ index, todo, onToggle, onRemove, onUpdate, is
                 ))}
               </div>
             )}
+
+            {/* Notes preview (view-only) */}
+            {todo.notes ? (
+              <div style={{ marginTop: 8 }}>
+                <div
+                  style={{
+                    whiteSpace: "pre-wrap",
+                    lineHeight: 1.4,
+                    overflowWrap: "anywhere",
+                    wordBreak: "break-word",
+                    maxWidth: "100%",
+                  }}
+                >
+                  {notesExpanded ? noteText: collapsedPreview}
+                </div>
+
+                {/* toggle button only if notes are longer than what the clamp shows — always show button to allow collapse/expand */}
+                {needsToggle ? (
+                  <button
+                    type="button"
+                    className="btn-plain"
+                    onClick={() => setNotesExpanded(prev => !prev)}
+                    style={{ marginTop: 6 }}
+                    onMouseDown={keepFocus}
+                  >
+                    {notesExpanded ? "Collapse" : "Expand"}
+                  </button>
+                ) : null}
+              </div>
+            ) : null}
 
             {/* Subtasks list (view mode) */}
             {todo.subtasks && todo.subtasks.length > 0 && (
@@ -394,13 +547,14 @@ export default function TodoItem({ index, todo, onToggle, onRemove, onUpdate, is
                           <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
                             <button
                               className="btn-danger"
+                              onMouseDown={keepFocus}
                               onClick={() => confirmSubtaskDelete(s.id, false)}
                               title={`Confirm delete ${s.text}`}
                               aria-label={`Confirm delete ${s.text}`}
                             >
                               Delete this?
                             </button>
-                            <button className="btn-plain" onClick={() => cancelSubtaskDelete(s.id)}>Cancel</button>
+                            <button className="btn-plain" onMouseDown={keepFocus} onClick={() => cancelSubtaskDelete(s.id)}>Cancel</button>
                           </div>
                         )}
                       </div>
@@ -432,10 +586,10 @@ export default function TodoItem({ index, todo, onToggle, onRemove, onUpdate, is
                   Hmm...this task's due time has passed sia. Have you finished it already? Or u simply forgor 💀
                 </div>
                 <div style={{ display: "flex", gap: 8 }}>
-                  <button type="button" className="btn-plain" onClick={() => { onToggle(todo.id); setShowExpiredPrompt(false); play("done", true); }}>
+                  <button type="button" className="btn-plain" onMouseDown={keepFocus} onClick={() => { onToggle(todo.id); setShowExpiredPrompt(false); play("done", true); }}>
                     Sir yes sir it's done~
                   </button>
-                  <button type="button" className="btn-plain" onClick={() => { setShowExpiredPrompt(false); play("click"); }}>
+                  <button type="button" className="btn-plain" onMouseDown={keepFocus} onClick={() => { setShowExpiredPrompt(false); play("click"); }}>
                     No leh alamak i forgor 🤡
                   </button>
                 </div>
@@ -468,7 +622,7 @@ export default function TodoItem({ index, todo, onToggle, onRemove, onUpdate, is
                 <option value={1}>1 min</option>
                 <option value={0}>At due</option>
               </select>
-              <button type="button" onClick={addReminderToDraft} className="btn-plain">Add reminder</button>
+              <button type="button" onMouseDown={keepFocus} onClick={addReminderToDraft} className="btn-plain">Add reminder</button>
 
               {/* show draft reminders */}
               <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginLeft: 8 }}>
@@ -511,6 +665,36 @@ export default function TodoItem({ index, todo, onToggle, onRemove, onUpdate, is
               )}
             </div>
 
+            {/* Notes (edit-only) */}
+            <div style={{ marginTop: 10 }}>
+              <label style={{ display: "block", fontSize: 13, marginBottom: 6, color: "var(--app-muted)" }}>
+                Notes (optional)
+              </label>
+
+              <textarea
+                className="editor-textarea"
+                placeholder="Add description for this task... (saved when you press Save)"
+                value={draft.notes}
+                onChange={(e) => setDraft(d => ({ ...d, notes: e.target.value }))}
+                rows={5}
+                style={{ width: "100%", minHeight: 120, resize: "vertical", padding: 10 }}
+              />
+
+              <div style={{ marginTop: 8, display: "flex", gap: 8 }}>
+                <button
+                  type="button"
+                  className="btn-plain"
+                  onMouseDown={keepFocus}
+                  onClick={() => setDraft(d => ({ ...d, notes: ""}))}
+                >
+                  Clear notes
+                </button>
+                <div style={{ fontSize: 12, color: "var(--app-muted)", alignSelf: "center" }}>
+                  Clear then Save to remove note permanently.
+                </div>
+              </div>
+            </div>
+
             {/* Subtasks editor */}
             {/* Subtask header & separator from main task edit mode */}
             <div style={{ marginTop: 16 }} />
@@ -544,8 +728,8 @@ export default function TodoItem({ index, todo, onToggle, onRemove, onUpdate, is
                   <option value={1}>1 min</option>
                   <option value={0}>At due</option>
                 </select>
-                <button type="button" className="btn-plain" onClick={addSubtaskReminder}>Add reminder</button>
-                <button type="button" className="btn-plain" onClick={addSubtaskDraft}>Add subtask</button>
+                <button type="button" className="btn-plain" onMouseDown={keepFocus} onClick={addSubtaskReminder}>Add reminder</button>
+                <button type="button" className="btn-plain" onMouseDown={keepFocus} onClick={addSubtaskDraft}>Add subtask</button>
               </div>
 
               {/* show subtask reminder chips */}
@@ -649,6 +833,7 @@ export default function TodoItem({ index, todo, onToggle, onRemove, onUpdate, is
                                   <button
                                     type="button"
                                     className="btn-plain"
+                                    onMouseDown={keepFocus}
                                     onClick={() => setSubtasksLocal(prev => prev.map(x => x.id === s.id ? ({ ...x, reminders: (x.reminders ?? []).filter(r => r !== m) }) : x))}
                                     style={{ padding: "4px 6px" }}
                                   >
@@ -663,11 +848,12 @@ export default function TodoItem({ index, todo, onToggle, onRemove, onUpdate, is
 
                       <div style={{ display: "flex", gap: 8 }}>
                         {!subtaskDeleteConfirm[s.id] ? (
-                          <button className="btn-danger" onClick={() => requestSubtaskDelete(s.id)}>Delete</button>
+                          <button className="btn-danger" onMouseDown= {keepFocus} onClick={() => requestSubtaskDelete(s.id)}>Delete</button>
                         ) : (
                           <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
                             <button
                               className="btn-danger"
+                              onMouseDown={keepFocus}
                               onClick={() => confirmSubtaskDelete(s.id, true)}
                               title="Confirm delete subtask"
                               aria-label={`Confirm delete ${s.text}`}
@@ -697,7 +883,7 @@ export default function TodoItem({ index, todo, onToggle, onRemove, onUpdate, is
           <>
             <button className="btn-plain" onClick={() => {
               setEditing(true);
-              setDraft({ text: todo.text, due: todo.due ?? "", tags: todo.tags.join(", "), priority: todo.priority, reminders: todo.reminders ?? [] });
+              setDraft({ text: todo.text, due: todo.due ?? "", tags: todo.tags.join(", "), priority: todo.priority, reminders: todo.reminders ?? [], notes: todo.notes ?? "" });
               // initialize recurrence edit state
               setSubtasksLocal(todo.subtasks ?? []);
               setIsRecurring(!!todo.recurrence);
@@ -709,18 +895,19 @@ export default function TodoItem({ index, todo, onToggle, onRemove, onUpdate, is
 
             {/* Delete: toggles inline delete confirmation */}
             {!deleteConfirmOpen ? (
-              <button className="btn-danger" onClick={() => { setDeleteConfirmOpen(true); play("click"); }}>Delete</button>
+              <button className="btn-danger" onMouseDown={keepFocus} onClick={() => { setDeleteConfirmOpen(true); play("click"); }}>Delete</button>
             ) : (
               <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
                 <button
                   className="btn-danger"
+                  onMouseDown={keepFocus}
                   onClick={handleDeleteClick}
                   title="Confirm delete"
                   aria-label={`Confirm delete ${todo.text}`}
                 >
                   Delete this?
                 </button>
-                <button className="btn-plain" onClick={() => { setDeleteConfirmOpen(false); play("click"); }}>Cancel</button>
+                <button className="btn-plain" onMouseDown={keepFocus} onClick={() => { setDeleteConfirmOpen(false); play("click"); }}>Cancel</button>
               </div>
             )}
           </>
