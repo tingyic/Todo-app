@@ -52,6 +52,10 @@ export default function TodoItem({ index, todo, onToggle, onRemove, onUpdate, is
     notes: todo.notes ?? "",
   }));
 
+  const [notesExpanded, setNotesExpanded] = useState(false);
+  const N_LINES = 3;
+  const N_CHARS = 200;
+
   // subtask editing UI (only used while editing)
   const [subtaskDraft, setSubtaskDraft] = useState("");
   const [subtaskPriority, setSubtaskPriority] = useState<Priority>("medium");
@@ -390,6 +394,25 @@ export default function TodoItem({ index, todo, onToggle, onRemove, onUpdate, is
     if (rootRef.current) rootRef.current.focus();
   }
 
+  const noteText = todo.notes ?? "";
+  const noteLines = noteText ? noteText.split(/\r?\n/) : [];
+  const hasManyLines = noteLines.length > N_LINES;
+  const isLongChars = noteText.length > N_CHARS;
+
+  const collapsedPreview = (() => {
+    if (!noteText) return "";
+    if (hasManyLines) {
+      const head = noteLines.slice(0, N_LINES).join("\n");
+      return noteLines.length > N_LINES ? head + "\n..." : head;
+    }
+    if (isLongChars) {
+      return noteText.slice(0, N_CHARS) + "...";
+    }
+    return noteText;
+  })();
+
+  const needsToggle = noteText.length > 0 && noteText !== collapsedPreview;
+
   return (
     <div
       ref={rootRef}
@@ -432,10 +455,31 @@ export default function TodoItem({ index, todo, onToggle, onRemove, onUpdate, is
 
             {/* Notes preview (view-only) */}
             {todo.notes ? (
-              <div style={{ marginTop: 10, padding: "8px 10px", borderRadius: 8, background: "var(--tag-bg)", border: "1px solid var(--app-border)" }}>
-                <div style={{ fontSize: 13, color: "var(--app-text)", whiteSpace: "pre-wrap", overflow: "hidden", maxHeight: 140 }}>
-                  {todo.notes}
+              <div style={{ marginTop: 8 }}>
+                <div
+                  style={{
+                    whiteSpace: "pre-wrap",
+                    lineHeight: 1.4,
+                    overflowWrap: "anywhere",
+                    wordBreak: "break-word",
+                    maxWidth: "100%",
+                  }}
+                >
+                  {notesExpanded ? noteText: collapsedPreview}
                 </div>
+
+                {/* toggle button only if notes are longer than what the clamp shows — always show button to allow collapse/expand */}
+                {needsToggle ? (
+                  <button
+                    type="button"
+                    className="btn-plain"
+                    onClick={() => setNotesExpanded(prev => !prev)}
+                    style={{ marginTop: 6 }}
+                    onMouseDown={keepFocus}
+                  >
+                    {notesExpanded ? "Collapse" : "Expand"}
+                  </button>
+                ) : null}
               </div>
             ) : null}
 
@@ -628,10 +672,11 @@ export default function TodoItem({ index, todo, onToggle, onRemove, onUpdate, is
               </label>
 
               <textarea
-                className="editor-input"
+                className="editor-textarea"
                 placeholder="Add description for this task... (saved when you press Save)"
                 value={draft.notes}
                 onChange={(e) => setDraft(d => ({ ...d, notes: e.target.value }))}
+                rows={5}
                 style={{ width: "100%", minHeight: 120, resize: "vertical", padding: 10 }}
               />
 
