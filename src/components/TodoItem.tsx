@@ -435,8 +435,9 @@ export default function TodoItem({ index, todo, onToggle, onRemove, onUpdate, is
 
     if (swipeLockedRef.current) return;
 
-    // for now, only right swipes allowed
-    const allowedX = Math.max(0, dx);
+    const MIN = -140;
+    const MAX = 180;
+    const allowedX = Math.max(MIN, Math.min(MAX, dx));
     setDragX(allowedX);
   }
 
@@ -452,17 +453,23 @@ export default function TodoItem({ index, todo, onToggle, onRemove, onUpdate, is
     }
 
     const dx = e.clientX - swipeStartRef.current.x;
-    const success = dx >= SWIPE_THRESHOLD;
+    const swipeRight = dx >= SWIPE_THRESHOLD;
+    const swipeLeft = dx <= -SWIPE_THRESHOLD;
 
     setIsDragging(false);
     setDragX(0);
     swipeStartRef.current = null;
 
-    if (success) {
+    if (swipeRight) {
       // perform the toggle: if undone, mark done, if done, mark undone
       onToggle(todo.id);
       play("done", true);
       if (showToast) showToast(todo.done ? "Yayyyyy lesgoooo task completed weeeee 🎉" : "Marked done", 900);
+    }
+
+    if (swipeLeft) {
+      setDeleteConfirmOpen(true);
+      play("click");
     }
   }
 
