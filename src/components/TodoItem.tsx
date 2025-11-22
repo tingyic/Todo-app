@@ -91,6 +91,15 @@ export default function TodoItem({ index, todo, onToggle, onRemove, onUpdate, is
   const rootRef = useRef<HTMLDivElement | null>(null);
   const [leaving, setLeaving] = useState(false);
 
+  {/* Mobile gestures */}
+  // swipe
+  const [dragX, setDragX] = useState(0);
+  const [isDragging, setIsDragging] = useState(false);
+  const swipeStartRef = useRef<{ x: number; y: number } | null>(null);
+  const swipeLockedRef = useRef(false); // prevent swiping when scrolling vertically
+  const SWIPE_THRESHOLD = 80; // px required to trigger swipe toggle
+  const SWIPE_CANCEL_VERTICAL = 12; //px required of vertical displacement to cancel swipe
+
   // add entrance animation class on mount
   useEffect(() => {
     const el = rootRef.current;
@@ -394,6 +403,69 @@ export default function TodoItem({ index, todo, onToggle, onRemove, onUpdate, is
     if (rootRef.current) rootRef.current.focus();
   }
 
+  // pointer (touch/mouse) handlers for swipe toggle
+  function onPointerDownSwipe(e: React.PointerEvent) {
+    const tgt = e.target as HTMLElement | null;
+    const interactiveTags = ["button", "input", "select", "a", "textarea", "label"];
+    if (tgt && (interactiveTags.includes(tgt.tagName.toLowerCase()) || tgt.closest("button") || tgt.closest("a") || tgt.closest("input"))) {
+      return;
+    }
+
+    (e.target as Element).setPointerCapture?.(e.pointerId);
+    swipeStartRef.current = { x: e.clientX, y: e.clientY };
+    swipeLockedRef.current = false;
+    setIsDragging(true);
+    setDragX(0);
+  }
+
+  function onPointerMoveSwipe(e: React.PointerEvent) {
+    if (!isDragging || !swipeStartRef.current) return;
+
+    const dx = e.clientX - swipeStartRef.current.x;
+    const dy = e.clientY - swipeStartRef.current.y;
+
+    // if user scrolls vertically beyond maximum displacement, lock swipe, allow scroll
+    if (!swipeLockedRef.current && Math.abs(dy) > SWIPE_CANCEL_VERTICAL && Math.abs(dy) > Math.abs(dx)) {
+      swipeLockedRef.current = true;
+      setIsDragging(false);
+      setDragX(0);
+      try { (e.target as Element).releasePointerCapture?.(e.pointerId); } catch {/* Empty */}
+      return;
+    }
+
+    if (swipeLockedRef.current) return;
+
+    // for now, only right swipes allowed
+    const allowedX = Math.max(0, dx);
+    setDragX(allowedX);
+  }
+
+  function onPointerUpSwipe(e: React.PointerEvent) {
+    if (!swipeStartRef.current) return;
+    try { (e.target as Element).releasePointerCapture?.(e.pointerId); } catch {/* Empty */}
+    if (swipeLockedRef.current) {
+      swipeStartRef.current = null;
+      swipeLockedRef.current = false;
+      setDragX(0);
+      setIsDragging(false);
+      return;
+    }
+
+    const dx = e.clientX - swipeStartRef.current.x;
+    const success = dx >= SWIPE_THRESHOLD;
+
+    setIsDragging(false);
+    setDragX(0);
+    swipeStartRef.current = null;
+
+    if (success) {
+      // perform the toggle: if undone, mark done, if done, mark undone
+      onToggle(todo.id);
+      play("done", true);
+      if (showToast) showToast(todo.done ? "Yayyyyy lesgoooo task completed weeeee 🎉" : "Marked done", 900);
+    }
+  }
+
   const noteText = todo.notes ?? "";
   const noteLines = noteText ? noteText.split(/\r?\n/) : [];
   const hasManyLines = noteLines.length > N_LINES;
@@ -419,8 +491,16 @@ export default function TodoItem({ index, todo, onToggle, onRemove, onUpdate, is
       tabIndex={0}
       onKeyDown={handleRootKeyDown}
       onClick={handleRootClick}
+      onPointerDown={onPointerDownSwipe}
+      onPointerMove={onPointerMoveSwipe}
+      onPointerUp={onPointerUpSwipe}
+      onPointerCancel={onPointerUpSwipe}
       className={`todo-item ${todo.done ? "todo-done" : ""} ${leaving ? "leaving" : ""} ${isDusting ? "dust" : ""}`}
-      style={cssVars}
+      style={{
+        ...cssVars,
+        transform: dragX ? `translateX(${dragX}px)` : undefined,
+        transition: isDragging ? "none" : "transform 220ms cubic-bezier(.2,.9,.2,1)",
+      }}
     >
       <div className="todo-col-checkbox">
         <input aria-label="Toggle todo" type="checkbox" checked={todo.done} onChange={handleCheckboxClick} />

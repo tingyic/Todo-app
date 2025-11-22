@@ -872,3 +872,20 @@ kbd.help-kbd, .help-kbd kbd {
 .toast-visible .help-fab {
   top: calc(20px + var(--toast-offset, 0px));
 }
+
+.todo-item {
+  position: relative;
+  touch-action: pan-y;
+}
+
+.todo-item.dragging {
+  box-shadow: 0 14px 40px rgba(2,6,23,0.08);
+}
+
+.todo-item[style*="transform"] {
+  will-change: transform;
+}
+
+.todo-item {
+  overflow: visible;
+}
