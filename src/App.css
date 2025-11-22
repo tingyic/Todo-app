@@ -37,6 +37,14 @@
   --help-fab-text: #06233a;
   --kbd-bg: rgba(0,0,0,0.06);
   --kbd-border: rgba(0,0,0,0.08);
+
+  /* swipe gradient variables */
+  --swipe-right-start: #dff8e6;
+  --swipe-right-end:   #9be79b;
+  --swipe-unmark-start: #f0f4f6;
+  --swipe-unmark-end:   #c6ccd1;
+  --swipe-left-start:  #ffe6ea;
+  --swipe-left-end:    #ff7b88;
 }
 
 .theme-dark{
@@ -77,6 +85,14 @@
   --help-fab-text: #fff;
   --kbd-bg: rgba(255,255,255,0.06);
   --kbd-border: rgba(255,255,255,0.06);
+
+  /* swipe gradient variables */
+  --swipe-right-start: #083222;
+  --swipe-right-end:   #0a7a3e;
+  --swipe-unmark-start: #0b1218;
+  --swipe-unmark-end:   #26313a;
+  --swipe-left-start:  #3a0f12;
+  --swipe-left-end:    #ff7b7b;
 }
 
 /* =========================
@@ -888,4 +904,60 @@ kbd.help-kbd, .help-kbd kbd {
 
 .todo-item {
   overflow: visible;
+}
+
+.todo-item .swipe-bg {
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  z-index: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+/* ensure actual content sits above swipe background */
+.todo-item > .todo-col-checkbox,
+.todo-item > .todo-col-content,
+.todo-item > .todo-col-actions {
+  position: relative;
+  z-index: 1;
+}
+
+/* swipe icon styling */
+.swipe-icon {
+  font-size: 18px;
+  line-height: 1;
+  padding: 10px;
+  border-radius: 999px;
+  background: rgba(255,255,255,0.12);
+  color: var(--app-card);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+  user-select: none;
+  filter: drop-shadow(0 4px 10px rgba(2,6,23,0.08));
+}
+
+/* position icon to left or right so it follows drag intent */
+.swipe-icon.left {
+  margin-left: 10px;
+  margin-right: auto;
+}
+.swipe-icon.right {
+  margin-right: 10px;
+  margin-left: auto;
+}
+
+/* subtle variations for light/dark so icon pill contrasts */
+:root .swipe-icon { background: rgba(255,255,255,0.22); color: #06233a; }
+.theme-dark .swipe-icon { background: rgba(0,0,0,0.32); color: #fff; }
+
+/* gentle transitions */
+.todo-item .swipe-bg,
+.todo-item .swipe-icon {
+  transition: opacity 160ms ease, transform 160ms ease;
 }

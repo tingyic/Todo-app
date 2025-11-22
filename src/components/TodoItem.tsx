@@ -64,6 +64,9 @@ export default function TodoItem({ index, todo, onToggle, onRemove, onUpdate, is
   const [subtaskReminders, setSubtaskReminders] = useState<number[]>([]);
   const [subtasksLocal, setSubtasksLocal] = useState<Subtask[]>(todo.subtasks ?? []);
 
+  const originalSubtasksRef = useRef<Subtask[] | null>(null);
+  const [forceParentUndone, setForceParentUndone] = useState(false);
+
   const cleanedSubtasks = subtasksLocal;
   const [subtaskRemSelects, setSubtaskRemSelects] = useState<Record<string, number | "">>({});
 
@@ -126,6 +129,11 @@ export default function TodoItem({ index, todo, onToggle, onRemove, onUpdate, is
     setWeekdays(prev => (prev.includes(d) ? prev.filter(x => x !== d) : [...prev, d].sort()));
   }
 
+  useEffect(() => {
+    if (!forceParentUndone) return;
+    if (!todo.done) setForceParentUndone(false);
+  }, [todo.done, forceParentUndone]);
+
   function addReminderToDraft() {
     if (reminderSelect === "") return;
     const m = Number(reminderSelect);
@@ -171,6 +179,7 @@ export default function TodoItem({ index, todo, onToggle, onRemove, onUpdate, is
     setSubtasksLocal(prev => {
       const next = [...prev, s];
       if (!editing) {
+        setForceParentUndone(true);
         onUpdate(todo.id, { subtasks: next, done: false });
       }
       return next;
@@ -225,6 +234,14 @@ export default function TodoItem({ index, todo, onToggle, onRemove, onUpdate, is
 
     const allDone = next.length > 0 && next.every(s => s.done);
     if (allDone && !todo.done) {
+      if (todo.recurrence) {
+        setConfirmOpen(true);
+        const allDoneSubs = next.map(s => ({ ...s, done: true }));
+        onUpdate(todo.id, { subtasks: allDoneSubs }, "Subtasks marked done");
+        play("click");
+        return;
+      }
+
       onToggle(todo.id);
       play("done", true);
       return;
@@ -249,6 +266,8 @@ export default function TodoItem({ index, todo, onToggle, onRemove, onUpdate, is
           : { freq: "monthly", interval: Math.max(1, Math.floor(interval)), dayOfMonth: undefined }
       : null;
 
+    const newDone = subtasksLocal.length ? subtasksLocal.every(s => !!s.done) : todo.done;
+
     onUpdate(todo.id, {
       text: draft.text.trim() || todo.text,
       due: draft.due || null,
@@ -258,7 +277,11 @@ export default function TodoItem({ index, todo, onToggle, onRemove, onUpdate, is
       reminders: draft.reminders?.length ? draft.reminders : undefined,
       subtasks: subtasksLocal.length ? cleanedSubtasks : undefined,
       notes: draft.notes?.trim() ? draft.notes.trim() : undefined,
+      done: newDone,
     });
+
+    setForceParentUndone(false);
+
     setEditing(false);
     play("click");
   }
@@ -274,12 +297,20 @@ export default function TodoItem({ index, todo, onToggle, onRemove, onUpdate, is
 
     // If non-recurring, simply toggle; if recurring, show inline confirm
     if (!todo.recurrence) {
+      const wasDone = todo.done;
       onToggle(todo.id);
-      play("done", true);
+      if (!wasDone) {
+        play("done", true);
+        if (showToast) showToast("Yayyyyy lesgoooo task completed weeeee 🎉", 1400);
+      } else {
+        play("done", true);
+        if (showToast) showToast("Marked done", 900);
+      }
       return;
     }
 
     // show inline confirm to let user choose
+    originalSubtasksRef.current = (todo.subtasks ?? []).map(s => ({ ...s }));
     setConfirmOpen(true);
 
     if ((todo.subtasks ?? []).length) {
@@ -314,6 +345,41 @@ export default function TodoItem({ index, todo, onToggle, onRemove, onUpdate, is
 
   const recLabel = recurrenceLabel(todo.recurrence);
   const cssVars = ({ ["--i"]: index ?? 0 } as unknown) as React.CSSProperties & Record<string, number>;
+
+  const swipeBgStyle: React.CSSProperties = (() => {
+    const abs = Math.min(1, Math.abs(dragX) / 140);
+    const opacity = abs;
+
+    if (!dragX || Math.abs(dragX) < 6) {
+      return {
+        opacity: 0,
+        transition: isDragging ? "none" : "opacity 200ms ease",
+        pointerEvents: "none",
+      };
+    }
+
+    // right swipe
+    if (dragX > 0) {
+      const gradient = todo.done
+        ? "linear-gradient(90deg, var(--swipe-unmark-start), var(--swipe-unmark-end))"
+        : "linear-gradient(90deg, var(--swipe-right-start), var(--swipe-right-end))";
+
+      return {
+        opacity,
+        transition: isDragging ? "none" : "opacity 180ms ease, transform 180ms ease",
+        background: gradient,
+        pointerEvents: "none",
+      };
+    }
+
+    // left swipe
+    return {
+      opacity,
+      transition: isDragging ? "none" : "opacity 180ms ease, transform 180ms ease",
+      background: "linear-gradient(90deg, var(--swipe-left-start), var(--swipe-left-end))",
+      pointerEvents: "none",
+    };
+  })();
 
   // progress bar for parent tasks with subtasks
   const viewTotal = (todo.subtasks ?? []).length;
@@ -462,9 +528,36 @@ export default function TodoItem({ index, todo, onToggle, onRemove, onUpdate, is
 
     if (swipeRight) {
       // perform the toggle: if undone, mark done, if done, mark undone
-      onToggle(todo.id);
-      play("done", true);
-      if (showToast) showToast(todo.done ? "Yayyyyy lesgoooo task completed weeeee 🎉" : "Marked done", 900);
+      
+      // if non-recurring, simply toggle
+      // if recurring, allow user to mark done permanently, or create next instance
+      if (todo.done) {
+        onToggle(todo.id);
+        play("undo", true);
+        if (showToast) showToast("Marked as not done", 900);
+        return;
+      }
+
+      if (!todo.recurrence) {
+        const wasDone = todo.done;
+        onToggle(todo.id);
+        if (!wasDone) {
+          play("done", true);
+          if (showToast) showToast("Yayyyyy lesgoooo task completed weeeee 🎉", 900);    
+        } else {
+          play("done", true);
+          if (showToast) showToast("Marked done", 900)
+        }
+        return;
+      }
+
+      originalSubtasksRef.current = (todo.subtasks ?? []).map(s => ({ ...s }));
+      setConfirmOpen(true);
+
+      if ((todo.subtasks ?? []. length)) {
+        const allDoneSubs = (todo.subtasks ?? []).map(s => ({ ...s, done: true }));
+        onUpdate(todo.id, { subtasks: allDoneSubs }, "Subtasks marked done");
+      }
     }
 
     if (swipeLeft) {
@@ -509,6 +602,16 @@ export default function TodoItem({ index, todo, onToggle, onRemove, onUpdate, is
         transition: isDragging ? "none" : "transform 220ms cubic-bezier(.2,.9,.2,1)",
       }}
     >
+      <div 
+        aria-hidden
+        className="swipe-bg"
+        style={swipeBgStyle}
+      >
+        <div className={`swipe-icon ${dragX > 0 ? "left" : "right"}`}>
+          {dragX > 0 ? (todo.done ? "↺" : "✓") : "🗑️"}
+        </div>
+      </div>
+
       <div className="todo-col-checkbox">
         <input aria-label="Toggle todo" type="checkbox" checked={todo.done} onChange={handleCheckboxClick} />
       </div>
@@ -584,7 +687,8 @@ export default function TodoItem({ index, todo, onToggle, onRemove, onUpdate, is
                 </div>
                 
                 {todo.subtasks.map(s => {
-                  const subDone = !!s.done || !!todo.done;
+                  const parentDone = forceParentUndone ? false : !!todo.done;
+                  const subDone = !!s.done || parentDone;
                   return (
                     <div key={s.id} style={{ display: "flex", gap: 8, alignItems: "center", justifyContent: "space-between" }}>
                       <div style={{ display: "flex", gap: 8, alignItems: "center", flex: 1 }}>
@@ -654,13 +758,23 @@ export default function TodoItem({ index, todo, onToggle, onRemove, onUpdate, is
             {/* inline confirm UI (visible when user checks recurring todo) */}
             {confirmOpen && (
               <div style={{ marginTop: 8, display: "flex", gap: 8 }}>
-                <button className="btn-plain" onClick={() => { setConfirmOpen(false); onToggle(todo.id, true); play("done", true); }}>
+                <button className="btn-plain" onClick={() => { setConfirmOpen(false); originalSubtasksRef.current = null; onToggle(todo.id, true); play("done", true); }}>
                   Create next
                 </button>
-                <button className="btn-plain" onClick={() => { setConfirmOpen(false); onToggle(todo.id, false); play("done", true); }}>
+                <button className="btn-plain" onClick={() => { setConfirmOpen(false); originalSubtasksRef.current = null; onToggle(todo.id, false); play("done", true); }}>
                   Mark done permanently
                 </button>
-                <button className="btn-plain" onClick={() => { setConfirmOpen(false); play("click"); }}>
+                <button
+                  className="btn-plain"
+                  onClick={() => {
+                    if (originalSubtasksRef.current) {
+                      onUpdate(todo.id, { subtasks: originalSubtasksRef.current }, "Cancelled, subtasks restored");
+                      originalSubtasksRef.current = null;
+                    }
+                    setConfirmOpen(false);
+                    play("click");
+                    }}
+                >
                   Cancel
                 </button>
               </div>
