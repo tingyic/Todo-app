@@ -103,6 +103,13 @@ export default function TodoItem({ index, todo, onToggle, onRemove, onUpdate, is
   const SWIPE_THRESHOLD = 80; // px required to trigger swipe toggle
   const SWIPE_CANCEL_VERTICAL = 12; //px required of vertical displacement to cancel swipe
 
+  // long press
+  const LONG_PRESS_TIME = 600;
+  const LONG_PRESS_MOVE_TOLERANCE = 8; // px displacement which cancels long press
+  const longPressTimerRef = useRef<number | null>(null);
+  const longPressTriggeredRef = useRef(false);
+  const longPressStartRef = useRef<{ x: number; y: number } | null>(null);
+
   // add entrance animation class on mount
   useEffect(() => {
     const el = rootRef.current;
@@ -347,39 +354,81 @@ export default function TodoItem({ index, todo, onToggle, onRemove, onUpdate, is
   const cssVars = ({ ["--i"]: index ?? 0 } as unknown) as React.CSSProperties & Record<string, number>;
 
   const swipeBgStyle: React.CSSProperties = (() => {
-    const abs = Math.min(1, Math.abs(dragX) / 140);
-    const opacity = abs;
+    const dx = dragX || 0;
 
-    if (!dragX || Math.abs(dragX) < 6) {
+    if (!dx || Math.abs(dx) < 6) {
       return {
         opacity: 0,
-        transition: isDragging ? "none" : "opacity 200ms ease",
+        transform: "scaleX(0)",
+        transformOrigin: "left center",
+        transition: isDragging ? "none" : "opacity 160ms ease, transform 180ms ease",
         pointerEvents: "none",
       };
     }
+
+    const progress = dx > 0
+      ? Math.min(1, dx / 180)
+      : Math.min(1, Math.abs(dx) / 140);
+
+    const opacity = Math.min(1, Math.max(0.12, progress));
+    const transform = `scaleX(${progress})`;
+    const transformOrigin = dx >= 0 ? "left center" : "right center";
+
+    let background = "transparent";
 
     // right swipe
-    if (dragX > 0) {
-      const gradient = todo.done
-        ? "linear-gradient(90deg, var(--swipe-unmark-start), var(--swipe-unmark-end))"
-        : "linear-gradient(90deg, var(--swipe-right-start), var(--swipe-right-end))";
-
-      return {
-        opacity,
-        transition: isDragging ? "none" : "opacity 180ms ease, transform 180ms ease",
-        background: gradient,
-        pointerEvents: "none",
-      };
+    if (dx > 0) {
+      background = todo.done
+        ? "linear-gradient(90deg, var(--swipe-unmark-end) 0%, var(--swipe-unmark-start) 70%, rgba(255, 255, 255, 0) 100%)"
+        : "linear-gradient(90deg, var(--swipe-right-end) 0%, var(--swipe-right-start) 70%, rgba(255, 255, 255, 0) 100%)";
+    } else if (dx < 0) {
+      // left swipe
+      background = "linear-gradient(90deg, var(--swipe-left-start), var(--swipe-left-end))";
     }
 
-    // left swipe
     return {
       opacity,
-      transition: isDragging ? "none" : "opacity 180ms ease, transform 180ms ease",
-      background: "linear-gradient(90deg, var(--swipe-left-start), var(--swipe-left-end))",
+      transform,
+      transformOrigin,
+      background,
+      transition: isDragging ? "none" : "opacity 160ms ease, transform 180ms cubic-bezier(0.2, 0.9, 0.2 ,1)",
       pointerEvents: "none",
     };
   })();
+
+  function createRipple(e: React.PointerEvent) {
+    const container = rootRef.current;
+    if (!container) return;
+
+    const rectangle = container.getBoundingClientRect();
+    const x = e.clientX - rectangle.left;
+    const y = e.clientY - rectangle.top;
+
+    const maxDim = Math.max(rectangle.width, rectangle.height);
+    const size = Math.ceil(maxDim * 2.5);
+
+    const span = document.createElement("span");
+    span.className = "todo-ripple";
+    span.style.width = `${size}px`;
+    span.style.height = `${size}px`;
+    span.style.left = `${x}px`;
+    span.style.top = `${y}px`;
+    container.appendChild(span);
+
+    void span.offsetWidth;
+
+    span.classList.add("show");
+
+    let cleaned = false;
+    function cleanup() {
+      if (cleaned) return;
+      cleaned = true;
+      span.removeEventListener("transitionend", cleanup);
+      try { span.remove(); } catch {/* Empty */}
+    }
+    span.addEventListener("transitionend", cleanup);
+    window.setTimeout(cleanup, 900);
+  }
 
   // progress bar for parent tasks with subtasks
   const viewTotal = (todo.subtasks ?? []).length;
@@ -566,6 +615,74 @@ export default function TodoItem({ index, todo, onToggle, onRemove, onUpdate, is
     }
   }
 
+  function triggerLongPressEdit() {
+    setEditing(true);
+    setDraft({ text: todo.text, due: todo.due ?? "", tags: todo.tags.join(", "), priority: todo.priority, reminders: todo.reminders ?? [], notes: todo.notes ?? "" });
+    setSubtasksLocal(todo.subtasks ?? []);
+    setIsRecurring(!!todo.recurrence);
+    setFreq((todo.recurrence?.freq) ?? "daily");
+    setInterval((todo.recurrence?.interval) ?? 1);
+    setWeekdays(recurrenceHasWeekdays(todo.recurrence) ? (todo.recurrence!.weekdays ?? []) : []);
+    play("click");
+  }
+
+  function onPointerDownLongPress(e: React.PointerEvent) {
+    const tgt = e.target as HTMLElement | null;
+    const interactiveTags = ["button","input","select","a","textarea","label"];
+    if (tgt && (interactiveTags.includes(tgt.tagName.toLowerCase()) || tgt.closest("button") || tgt.closest("a") || tgt.closest("input"))) {
+      return;
+    }
+
+    (e.target as Element).setPointerCapture?.(e.pointerId);
+    longPressStartRef.current = { x: e.clientX, y: e.clientY };
+    longPressTriggeredRef.current = false;
+
+    if (longPressTimerRef.current) {
+      window.clearTimeout(longPressTimerRef.current);
+      longPressTimerRef.current = null;
+    }
+    longPressTriggeredRef.current = false;
+
+    longPressTimerRef.current = window.setTimeout(() => {
+      longPressTriggeredRef.current = true;
+      swipeLockedRef.current = true;
+      setIsDragging(false);
+      setDragX(0);
+      triggerLongPressEdit();
+    }, LONG_PRESS_TIME);
+  }
+
+  function onPointerMoveLongPress(e: React.PointerEvent) {
+    if (!longPressStartRef.current || !longPressTimerRef.current) return;
+
+    const dx = e.clientX - longPressStartRef.current.x;
+    const dy = e.clientY - longPressStartRef.current.y;
+
+    if (Math.abs(dx) > LONG_PRESS_MOVE_TOLERANCE || Math.abs(dy) > LONG_PRESS_MOVE_TOLERANCE) {
+      if (longPressTimerRef.current) {
+        window.clearTimeout(longPressTimerRef.current);
+        longPressTimerRef.current = null;
+      }
+    }
+  }
+
+  function onPointerUpLongPress(e: React.PointerEvent) {
+    if (longPressTimerRef.current) {
+      window.clearTimeout(longPressTimerRef.current);
+      longPressTimerRef.current = null;
+    }
+    if (longPressTriggeredRef.current) {
+      longPressTriggeredRef.current = false;
+      longPressStartRef.current = null;
+      setDragX(0);
+      setIsDragging(false);
+      swipeLockedRef.current = false;
+      try { (e.target as Element).releasePointerCapture?.(e.pointerId); } catch {/* Empty */}
+      return;
+    }
+    try { (e.target as Element).releasePointerCapture?.(e.pointerId); } catch {/* Empty */}
+  }
+
   const noteText = todo.notes ?? "";
   const noteLines = noteText ? noteText.split(/\r?\n/) : [];
   const hasManyLines = noteLines.length > N_LINES;
@@ -591,10 +708,23 @@ export default function TodoItem({ index, todo, onToggle, onRemove, onUpdate, is
       tabIndex={0}
       onKeyDown={handleRootKeyDown}
       onClick={handleRootClick}
-      onPointerDown={onPointerDownSwipe}
-      onPointerMove={onPointerMoveSwipe}
-      onPointerUp={onPointerUpSwipe}
-      onPointerCancel={onPointerUpSwipe}
+      onPointerDown={(e) => {
+        onPointerDownSwipe(e);
+        onPointerDownLongPress(e);
+        createRipple(e);
+      }}
+      onPointerMove={(e) => {
+        onPointerMoveSwipe(e);
+        onPointerMoveLongPress(e);
+      }}
+      onPointerUp={(e) => {
+        onPointerUpSwipe(e);
+        onPointerUpLongPress(e);
+      }}
+      onPointerCancel={(e) => {
+        onPointerUpSwipe(e);
+        onPointerUpLongPress(e);
+      }}
       className={`todo-item ${todo.done ? "todo-done" : ""} ${leaving ? "leaving" : ""} ${isDusting ? "dust" : ""}`}
       style={{
         ...cssVars,

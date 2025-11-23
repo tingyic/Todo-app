@@ -28,15 +28,15 @@
 
   /* ---- danger variables (used for delete + clear completed) ---- */
   --danger: #9b1c1c;
-  --danger-border: rgba(185,28,28,0.18);
-  --danger-border-hover: rgba(185,28,28,0.28);
+  --danger-border: rgba(185, 28, 28, 0.18);
+  --danger-border-hover: rgba(185, 28, 28, 0.28);
   --danger-bg-hover: rgba(255, 120, 120, 0.03);
 
   --help-fab-top: #e6f6ff;
   --help-fab-bottom: #a0d8ff;
   --help-fab-text: #06233a;
-  --kbd-bg: rgba(0,0,0,0.06);
-  --kbd-border: rgba(0,0,0,0.08);
+  --kbd-bg: rgba(0, 0, 0, 0.06);
+  --kbd-border: rgba(0, 0, 0, 0.08);
 
   /* swipe gradient variables */
   --swipe-right-start: #dff8e6;
@@ -45,6 +45,9 @@
   --swipe-unmark-end:   #c6ccd1;
   --swipe-left-start:  #ffe6ea;
   --swipe-left-end:    #ff7b88;
+
+  /* ripple */
+  --ripple-color: rgba(2, 6, 23, 0.12);
 }
 
 .theme-dark{
@@ -76,15 +79,15 @@
 
   /* danger in dark theme */
   --danger: #ff7b7b;
-  --danger-border: rgba(255,123,123,0.12);
-  --danger-border-hover: rgba(255,123,123,0.22);
-  --danger-bg-hover: rgba(255,123,123,0.04);
+  --danger-border: rgba(255, 123, 123, 0.12);
+  --danger-border-hover: rgba(255, 123, 123, 0.22);
+  --danger-bg-hover: rgba(255, 123, 123, 0.04);
 
   --help-fab-top: #083b67;
   --help-fab-bottom: #0b66a6;
   --help-fab-text: #fff;
-  --kbd-bg: rgba(255,255,255,0.06);
-  --kbd-border: rgba(255,255,255,0.06);
+  --kbd-bg: rgba(255, 255, 255, 0.06);
+  --kbd-border: rgba(255, 255, 255, 0.06);
 
   /* swipe gradient variables */
   --swipe-right-start: #083222;
@@ -93,6 +96,9 @@
   --swipe-unmark-end:   #26313a;
   --swipe-left-start:  #3a0f12;
   --swipe-left-end:    #ff7b7b;
+
+  /* ripple */
+  --ripple-color: rgba(255, 255, 255, 0.12);
 }
 
 /* =========================
@@ -903,7 +909,8 @@ kbd.help-kbd, .help-kbd kbd {
 }
 
 .todo-item {
-  overflow: visible;
+  position: relative;
+  overflow: hidden;
 }
 
 .todo-item .swipe-bg {
@@ -916,6 +923,11 @@ kbd.help-kbd, .help-kbd kbd {
   justify-content: center;
   overflow: hidden;
   pointer-events: none;
+
+  transform: scaleX(0);
+  transform-origin: left center;
+  transition: transform 180ms cubic-bezier(0.2, 0.9, 0.2, 1), opacity 160ms ease;
+  opacity: 0;
 }
 
 /* ensure actual content sits above swipe background */
@@ -923,41 +935,70 @@ kbd.help-kbd, .help-kbd kbd {
 .todo-item > .todo-col-content,
 .todo-item > .todo-col-actions {
   position: relative;
-  z-index: 1;
+  z-index: 2;
 }
 
 /* swipe icon styling */
 .swipe-icon {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%) translateX(0);
+  z-index: 3;
   font-size: 18px;
   line-height: 1;
+  width: auto;
+  height: auto;
   padding: 10px;
   border-radius: 999px;
-  background: rgba(255,255,255,0.12);
-  color: var(--app-card);
   display: inline-flex;
   align-items: center;
   justify-content: center;
   pointer-events: none;
   user-select: none;
-  filter: drop-shadow(0 4px 10px rgba(2,6,23,0.08));
+  filter: drop-shadow(0 4px 10px rgba(2, 6, 23, 0.08));
+  transition: transform 120ms ease, opacity 120ms ease;
 }
 
 /* position icon to left or right so it follows drag intent */
 .swipe-icon.left {
-  margin-left: 10px;
-  margin-right: auto;
+  left: 10px;
+  right: auto;
+  justify-content: flex-start;
 }
 .swipe-icon.right {
-  margin-right: 10px;
-  margin-left: auto;
+  right: 10px;
+  left: auto;
+  justify-content: flex-end;
 }
 
 /* subtle variations for light/dark so icon pill contrasts */
-:root .swipe-icon { background: rgba(255,255,255,0.22); color: #06233a; }
-.theme-dark .swipe-icon { background: rgba(0,0,0,0.32); color: #fff; }
+:root .swipe-icon { background: rgba(255, 255, 255, 0.22); color: #06233a; }
+.theme-dark .swipe-icon { background: rgba(0, 0, 0, 0.32); color: #fff; }
+
+@media (max-width: 420px) {
+  .swipe-icon { width: 40px; height: 40px; padding: 6px; font-size: 16px; }
+}
 
 /* gentle transitions */
 .todo-item .swipe-bg,
 .todo-item .swipe-icon {
   transition: opacity 160ms ease, transform 160ms ease;
+}
+
+/* ripple element */
+.todo-ripple {
+  position: absolute;
+  border-radius: 60%;
+  pointer-events: none;
+  transform: translate(-50%, -50%) scale(0.2);
+  opacity: 0.8;
+  will-change: transform, opacity;
+  transition: transform 5000ms cubic-bezier(0.2, 0.9, 0.2, 1), opacity 5000ms ease;
+  box-shadow: 0 6px 20px rgba(2, 6, 23, 0.12);
+  background: radial-gradient(circle at 30% 30%, rgba(255, 255, 255, 0.08), var(--ripple-color, rgba(2, 6, 23, 0.12)));
+}
+
+.todo-ripple.show {
+  transform: translate(-50%, -50%) scale(1);
+  opacity: 0.06; /* fades out while expanding */
 }
