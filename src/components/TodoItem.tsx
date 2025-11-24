@@ -65,6 +65,8 @@ export default function TodoItem({ index, todo, onToggle, onRemove, onUpdate, is
   const [subtasksLocal, setSubtasksLocal] = useState<Subtask[]>(todo.subtasks ?? []);
 
   const originalSubtasksRef = useRef<Subtask[] | null>(null);
+  const originalDoneRef = useRef<boolean | null>(null);
+  const provisionalRef = useRef(false);
   const [forceParentUndone, setForceParentUndone] = useState(false);
 
   const cleanedSubtasks = subtasksLocal;
@@ -288,6 +290,7 @@ export default function TodoItem({ index, todo, onToggle, onRemove, onUpdate, is
     });
 
     setForceParentUndone(false);
+    originalSubtasksRef.current = null;
 
     setEditing(false);
     play("click");
@@ -318,12 +321,35 @@ export default function TodoItem({ index, todo, onToggle, onRemove, onUpdate, is
 
     // show inline confirm to let user choose
     originalSubtasksRef.current = (todo.subtasks ?? []).map(s => ({ ...s }));
+    originalDoneRef.current = !!todo.done;
+    provisionalRef.current = true;
     setConfirmOpen(true);
 
     if ((todo.subtasks ?? []).length) {
       const allDoneSubs = (todo.subtasks ?? []).map(s => ({ ...s, done: true }));
       onUpdate(todo.id, { subtasks: allDoneSubs }, "Subtasks marked done");
     }
+  }
+
+  function restoreAndCancelConfirm() {
+    if (provisionalRef.current) {
+      onUpdate(todo.id, {
+        subtasks: originalSubtasksRef.current ?? undefined,
+        done: originalDoneRef.current ?? false,
+      }, "Cancelled, subtasks restored");
+    } else if (originalSubtasksRef.current || originalDoneRef.current !== null) {
+      onUpdate(todo.id, {
+        subtasks: originalSubtasksRef.current ?? undefined,
+        done: originalDoneRef.current ?? false,
+      }, "Cancelled, subtasks restored");
+    }
+
+    originalSubtasksRef.current = null;
+    originalDoneRef.current = null;
+    provisionalRef.current = false;
+
+    setConfirmOpen(false);
+    play("click");
   }
 
   function handleDeleteClick() {
@@ -497,8 +523,8 @@ export default function TodoItem({ index, todo, onToggle, onRemove, onUpdate, is
         play("click");
       } else if (confirmOpen) {
         // cancels confirm
-        setConfirmOpen(false);
-        play("click");
+        e.preventDefault();
+        restoreAndCancelConfirm();
       }
       return;
     }
@@ -601,6 +627,7 @@ export default function TodoItem({ index, todo, onToggle, onRemove, onUpdate, is
       }
 
       originalSubtasksRef.current = (todo.subtasks ?? []).map(s => ({ ...s }));
+      originalDoneRef.current = !!todo.done;
       setConfirmOpen(true);
 
       if ((todo.subtasks ?? []. length)) {
@@ -888,23 +915,15 @@ export default function TodoItem({ index, todo, onToggle, onRemove, onUpdate, is
             {/* inline confirm UI (visible when user checks recurring todo) */}
             {confirmOpen && (
               <div style={{ marginTop: 8, display: "flex", gap: 8 }}>
-                <button className="btn-plain" onClick={() => { setConfirmOpen(false); originalSubtasksRef.current = null; onToggle(todo.id, true); play("done", true); }}>
+                <button className="btn-plain" onClick={() => { setConfirmOpen(false); provisionalRef.current = false; originalSubtasksRef.current = null; originalDoneRef.current = null; onToggle(todo.id, true); play("done", true); }}>
                   Create next
                 </button>
-                <button className="btn-plain" onClick={() => { setConfirmOpen(false); originalSubtasksRef.current = null; onToggle(todo.id, false); play("done", true); }}>
+                <button className="btn-plain" onClick={() => { setConfirmOpen(false); provisionalRef.current = false; originalSubtasksRef.current = null; originalDoneRef.current = null; onToggle(todo.id, false); play("done", true); }}>
                   Mark done permanently
                 </button>
                 <button
                   className="btn-plain"
-                  onClick={() => {
-                    if (originalSubtasksRef.current) {
-                      onUpdate(todo.id, { subtasks: originalSubtasksRef.current }, "Cancelled, subtasks restored");
-                      originalSubtasksRef.current = null;
-                    }
-                    setConfirmOpen(false);
-                    play("click");
-                    }}
-                >
+                  onClick={restoreAndCancelConfirm}>
                   Cancel
                 </button>
               </div>
