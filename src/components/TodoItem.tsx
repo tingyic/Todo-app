@@ -64,6 +64,9 @@ export default function TodoItem({ index, todo, onToggle, onRemove, onUpdate, is
   const [subtaskReminders, setSubtaskReminders] = useState<number[]>([]);
   const [subtasksLocal, setSubtasksLocal] = useState<Subtask[]>(todo.subtasks ?? []);
 
+  const originalSubtasksRef = useRef<Subtask[] | null>(null);
+  const [forceParentUndone, setForceParentUndone] = useState(false);
+
   const cleanedSubtasks = subtasksLocal;
   const [subtaskRemSelects, setSubtaskRemSelects] = useState<Record<string, number | "">>({});
 
@@ -91,6 +94,22 @@ export default function TodoItem({ index, todo, onToggle, onRemove, onUpdate, is
   const rootRef = useRef<HTMLDivElement | null>(null);
   const [leaving, setLeaving] = useState(false);
 
+  {/* Mobile gestures */}
+  // swipe
+  const [dragX, setDragX] = useState(0);
+  const [isDragging, setIsDragging] = useState(false);
+  const swipeStartRef = useRef<{ x: number; y: number } | null>(null);
+  const swipeLockedRef = useRef(false); // prevent swiping when scrolling vertically
+  const SWIPE_THRESHOLD = 80; // px required to trigger swipe toggle
+  const SWIPE_CANCEL_VERTICAL = 12; //px required of vertical displacement to cancel swipe
+
+  // long press
+  const LONG_PRESS_TIME = 600;
+  const LONG_PRESS_MOVE_TOLERANCE = 8; // px displacement which cancels long press
+  const longPressTimerRef = useRef<number | null>(null);
+  const longPressTriggeredRef = useRef(false);
+  const longPressStartRef = useRef<{ x: number; y: number } | null>(null);
+
   // add entrance animation class on mount
   useEffect(() => {
     const el = rootRef.current;
@@ -116,6 +135,11 @@ export default function TodoItem({ index, todo, onToggle, onRemove, onUpdate, is
   function toggleWeekday(d: number) {
     setWeekdays(prev => (prev.includes(d) ? prev.filter(x => x !== d) : [...prev, d].sort()));
   }
+
+  useEffect(() => {
+    if (!forceParentUndone) return;
+    if (!todo.done) setForceParentUndone(false);
+  }, [todo.done, forceParentUndone]);
 
   function addReminderToDraft() {
     if (reminderSelect === "") return;
@@ -162,6 +186,7 @@ export default function TodoItem({ index, todo, onToggle, onRemove, onUpdate, is
     setSubtasksLocal(prev => {
       const next = [...prev, s];
       if (!editing) {
+        setForceParentUndone(true);
         onUpdate(todo.id, { subtasks: next, done: false });
       }
       return next;
@@ -216,6 +241,14 @@ export default function TodoItem({ index, todo, onToggle, onRemove, onUpdate, is
 
     const allDone = next.length > 0 && next.every(s => s.done);
     if (allDone && !todo.done) {
+      if (todo.recurrence) {
+        setConfirmOpen(true);
+        const allDoneSubs = next.map(s => ({ ...s, done: true }));
+        onUpdate(todo.id, { subtasks: allDoneSubs }, "Subtasks marked done");
+        play("click");
+        return;
+      }
+
       onToggle(todo.id);
       play("done", true);
       return;
@@ -240,6 +273,8 @@ export default function TodoItem({ index, todo, onToggle, onRemove, onUpdate, is
           : { freq: "monthly", interval: Math.max(1, Math.floor(interval)), dayOfMonth: undefined }
       : null;
 
+    const newDone = subtasksLocal.length ? subtasksLocal.every(s => !!s.done) : todo.done;
+
     onUpdate(todo.id, {
       text: draft.text.trim() || todo.text,
       due: draft.due || null,
@@ -249,7 +284,11 @@ export default function TodoItem({ index, todo, onToggle, onRemove, onUpdate, is
       reminders: draft.reminders?.length ? draft.reminders : undefined,
       subtasks: subtasksLocal.length ? cleanedSubtasks : undefined,
       notes: draft.notes?.trim() ? draft.notes.trim() : undefined,
+      done: newDone,
     });
+
+    setForceParentUndone(false);
+
     setEditing(false);
     play("click");
   }
@@ -265,12 +304,20 @@ export default function TodoItem({ index, todo, onToggle, onRemove, onUpdate, is
 
     // If non-recurring, simply toggle; if recurring, show inline confirm
     if (!todo.recurrence) {
+      const wasDone = todo.done;
       onToggle(todo.id);
-      play("done", true);
+      if (!wasDone) {
+        play("done", true);
+        if (showToast) showToast("Yayyyyy lesgoooo task completed weeeee 🎉", 1400);
+      } else {
+        play("done", true);
+        if (showToast) showToast("Marked done", 900);
+      }
       return;
     }
 
     // show inline confirm to let user choose
+    originalSubtasksRef.current = (todo.subtasks ?? []).map(s => ({ ...s }));
     setConfirmOpen(true);
 
     if ((todo.subtasks ?? []).length) {
@@ -305,6 +352,83 @@ export default function TodoItem({ index, todo, onToggle, onRemove, onUpdate, is
 
   const recLabel = recurrenceLabel(todo.recurrence);
   const cssVars = ({ ["--i"]: index ?? 0 } as unknown) as React.CSSProperties & Record<string, number>;
+
+  const swipeBgStyle: React.CSSProperties = (() => {
+    const dx = dragX || 0;
+
+    if (!dx || Math.abs(dx) < 6) {
+      return {
+        opacity: 0,
+        transform: "scaleX(0)",
+        transformOrigin: "left center",
+        transition: isDragging ? "none" : "opacity 160ms ease, transform 180ms ease",
+        pointerEvents: "none",
+      };
+    }
+
+    const progress = dx > 0
+      ? Math.min(1, dx / 180)
+      : Math.min(1, Math.abs(dx) / 140);
+
+    const opacity = Math.min(1, Math.max(0.12, progress));
+    const transform = `scaleX(${progress})`;
+    const transformOrigin = dx >= 0 ? "left center" : "right center";
+
+    let background = "transparent";
+
+    // right swipe
+    if (dx > 0) {
+      background = todo.done
+        ? "linear-gradient(90deg, var(--swipe-unmark-end) 0%, var(--swipe-unmark-start) 70%, rgba(255, 255, 255, 0) 100%)"
+        : "linear-gradient(90deg, var(--swipe-right-end) 0%, var(--swipe-right-start) 70%, rgba(255, 255, 255, 0) 100%)";
+    } else if (dx < 0) {
+      // left swipe
+      background = "linear-gradient(90deg, var(--swipe-left-start), var(--swipe-left-end))";
+    }
+
+    return {
+      opacity,
+      transform,
+      transformOrigin,
+      background,
+      transition: isDragging ? "none" : "opacity 160ms ease, transform 180ms cubic-bezier(0.2, 0.9, 0.2 ,1)",
+      pointerEvents: "none",
+    };
+  })();
+
+  function createRipple(e: React.PointerEvent) {
+    const container = rootRef.current;
+    if (!container) return;
+
+    const rectangle = container.getBoundingClientRect();
+    const x = e.clientX - rectangle.left;
+    const y = e.clientY - rectangle.top;
+
+    const maxDim = Math.max(rectangle.width, rectangle.height);
+    const size = Math.ceil(maxDim * 2.5);
+
+    const span = document.createElement("span");
+    span.className = "todo-ripple";
+    span.style.width = `${size}px`;
+    span.style.height = `${size}px`;
+    span.style.left = `${x}px`;
+    span.style.top = `${y}px`;
+    container.appendChild(span);
+
+    void span.offsetWidth;
+
+    span.classList.add("show");
+
+    let cleaned = false;
+    function cleanup() {
+      if (cleaned) return;
+      cleaned = true;
+      span.removeEventListener("transitionend", cleanup);
+      try { span.remove(); } catch {/* Empty */}
+    }
+    span.addEventListener("transitionend", cleanup);
+    window.setTimeout(cleanup, 900);
+  }
 
   // progress bar for parent tasks with subtasks
   const viewTotal = (todo.subtasks ?? []).length;
@@ -394,6 +518,171 @@ export default function TodoItem({ index, todo, onToggle, onRemove, onUpdate, is
     if (rootRef.current) rootRef.current.focus();
   }
 
+  // pointer (touch/mouse) handlers for swipe toggle
+  function onPointerDownSwipe(e: React.PointerEvent) {
+    const tgt = e.target as HTMLElement | null;
+    const interactiveTags = ["button", "input", "select", "a", "textarea", "label"];
+    if (tgt && (interactiveTags.includes(tgt.tagName.toLowerCase()) || tgt.closest("button") || tgt.closest("a") || tgt.closest("input"))) {
+      return;
+    }
+
+    (e.target as Element).setPointerCapture?.(e.pointerId);
+    swipeStartRef.current = { x: e.clientX, y: e.clientY };
+    swipeLockedRef.current = false;
+    setIsDragging(true);
+    setDragX(0);
+  }
+
+  function onPointerMoveSwipe(e: React.PointerEvent) {
+    if (!isDragging || !swipeStartRef.current) return;
+
+    const dx = e.clientX - swipeStartRef.current.x;
+    const dy = e.clientY - swipeStartRef.current.y;
+
+    // if user scrolls vertically beyond maximum displacement, lock swipe, allow scroll
+    if (!swipeLockedRef.current && Math.abs(dy) > SWIPE_CANCEL_VERTICAL && Math.abs(dy) > Math.abs(dx)) {
+      swipeLockedRef.current = true;
+      setIsDragging(false);
+      setDragX(0);
+      try { (e.target as Element).releasePointerCapture?.(e.pointerId); } catch {/* Empty */}
+      return;
+    }
+
+    if (swipeLockedRef.current) return;
+
+    const MIN = -140;
+    const MAX = 180;
+    const allowedX = Math.max(MIN, Math.min(MAX, dx));
+    setDragX(allowedX);
+  }
+
+  function onPointerUpSwipe(e: React.PointerEvent) {
+    if (!swipeStartRef.current) return;
+    try { (e.target as Element).releasePointerCapture?.(e.pointerId); } catch {/* Empty */}
+    if (swipeLockedRef.current) {
+      swipeStartRef.current = null;
+      swipeLockedRef.current = false;
+      setDragX(0);
+      setIsDragging(false);
+      return;
+    }
+
+    const dx = e.clientX - swipeStartRef.current.x;
+    const swipeRight = dx >= SWIPE_THRESHOLD;
+    const swipeLeft = dx <= -SWIPE_THRESHOLD;
+
+    setIsDragging(false);
+    setDragX(0);
+    swipeStartRef.current = null;
+
+    if (swipeRight) {
+      // perform the toggle: if undone, mark done, if done, mark undone
+      
+      // if non-recurring, simply toggle
+      // if recurring, allow user to mark done permanently, or create next instance
+      if (todo.done) {
+        onToggle(todo.id);
+        play("undo", true);
+        if (showToast) showToast("Marked as not done", 900);
+        return;
+      }
+
+      if (!todo.recurrence) {
+        const wasDone = todo.done;
+        onToggle(todo.id);
+        if (!wasDone) {
+          play("done", true);
+          if (showToast) showToast("Yayyyyy lesgoooo task completed weeeee 🎉", 900);    
+        } else {
+          play("done", true);
+          if (showToast) showToast("Marked done", 900)
+        }
+        return;
+      }
+
+      originalSubtasksRef.current = (todo.subtasks ?? []).map(s => ({ ...s }));
+      setConfirmOpen(true);
+
+      if ((todo.subtasks ?? []. length)) {
+        const allDoneSubs = (todo.subtasks ?? []).map(s => ({ ...s, done: true }));
+        onUpdate(todo.id, { subtasks: allDoneSubs }, "Subtasks marked done");
+      }
+    }
+
+    if (swipeLeft) {
+      setDeleteConfirmOpen(true);
+      play("click");
+    }
+  }
+
+  function triggerLongPressEdit() {
+    setEditing(true);
+    setDraft({ text: todo.text, due: todo.due ?? "", tags: todo.tags.join(", "), priority: todo.priority, reminders: todo.reminders ?? [], notes: todo.notes ?? "" });
+    setSubtasksLocal(todo.subtasks ?? []);
+    setIsRecurring(!!todo.recurrence);
+    setFreq((todo.recurrence?.freq) ?? "daily");
+    setInterval((todo.recurrence?.interval) ?? 1);
+    setWeekdays(recurrenceHasWeekdays(todo.recurrence) ? (todo.recurrence!.weekdays ?? []) : []);
+    play("click");
+  }
+
+  function onPointerDownLongPress(e: React.PointerEvent) {
+    const tgt = e.target as HTMLElement | null;
+    const interactiveTags = ["button","input","select","a","textarea","label"];
+    if (tgt && (interactiveTags.includes(tgt.tagName.toLowerCase()) || tgt.closest("button") || tgt.closest("a") || tgt.closest("input"))) {
+      return;
+    }
+
+    (e.target as Element).setPointerCapture?.(e.pointerId);
+    longPressStartRef.current = { x: e.clientX, y: e.clientY };
+    longPressTriggeredRef.current = false;
+
+    if (longPressTimerRef.current) {
+      window.clearTimeout(longPressTimerRef.current);
+      longPressTimerRef.current = null;
+    }
+    longPressTriggeredRef.current = false;
+
+    longPressTimerRef.current = window.setTimeout(() => {
+      longPressTriggeredRef.current = true;
+      swipeLockedRef.current = true;
+      setIsDragging(false);
+      setDragX(0);
+      triggerLongPressEdit();
+    }, LONG_PRESS_TIME);
+  }
+
+  function onPointerMoveLongPress(e: React.PointerEvent) {
+    if (!longPressStartRef.current || !longPressTimerRef.current) return;
+
+    const dx = e.clientX - longPressStartRef.current.x;
+    const dy = e.clientY - longPressStartRef.current.y;
+
+    if (Math.abs(dx) > LONG_PRESS_MOVE_TOLERANCE || Math.abs(dy) > LONG_PRESS_MOVE_TOLERANCE) {
+      if (longPressTimerRef.current) {
+        window.clearTimeout(longPressTimerRef.current);
+        longPressTimerRef.current = null;
+      }
+    }
+  }
+
+  function onPointerUpLongPress(e: React.PointerEvent) {
+    if (longPressTimerRef.current) {
+      window.clearTimeout(longPressTimerRef.current);
+      longPressTimerRef.current = null;
+    }
+    if (longPressTriggeredRef.current) {
+      longPressTriggeredRef.current = false;
+      longPressStartRef.current = null;
+      setDragX(0);
+      setIsDragging(false);
+      swipeLockedRef.current = false;
+      try { (e.target as Element).releasePointerCapture?.(e.pointerId); } catch {/* Empty */}
+      return;
+    }
+    try { (e.target as Element).releasePointerCapture?.(e.pointerId); } catch {/* Empty */}
+  }
+
   const noteText = todo.notes ?? "";
   const noteLines = noteText ? noteText.split(/\r?\n/) : [];
   const hasManyLines = noteLines.length > N_LINES;
@@ -419,9 +708,40 @@ export default function TodoItem({ index, todo, onToggle, onRemove, onUpdate, is
       tabIndex={0}
       onKeyDown={handleRootKeyDown}
       onClick={handleRootClick}
+      onPointerDown={(e) => {
+        onPointerDownSwipe(e);
+        onPointerDownLongPress(e);
+        createRipple(e);
+      }}
+      onPointerMove={(e) => {
+        onPointerMoveSwipe(e);
+        onPointerMoveLongPress(e);
+      }}
+      onPointerUp={(e) => {
+        onPointerUpSwipe(e);
+        onPointerUpLongPress(e);
+      }}
+      onPointerCancel={(e) => {
+        onPointerUpSwipe(e);
+        onPointerUpLongPress(e);
+      }}
       className={`todo-item ${todo.done ? "todo-done" : ""} ${leaving ? "leaving" : ""} ${isDusting ? "dust" : ""}`}
-      style={cssVars}
+      style={{
+        ...cssVars,
+        transform: dragX ? `translateX(${dragX}px)` : undefined,
+        transition: isDragging ? "none" : "transform 220ms cubic-bezier(.2,.9,.2,1)",
+      }}
     >
+      <div 
+        aria-hidden
+        className="swipe-bg"
+        style={swipeBgStyle}
+      >
+        <div className={`swipe-icon ${dragX > 0 ? "left" : "right"}`}>
+          {dragX > 0 ? (todo.done ? "↺" : "✓") : "🗑️"}
+        </div>
+      </div>
+
       <div className="todo-col-checkbox">
         <input aria-label="Toggle todo" type="checkbox" checked={todo.done} onChange={handleCheckboxClick} />
       </div>
@@ -497,7 +817,8 @@ export default function TodoItem({ index, todo, onToggle, onRemove, onUpdate, is
                 </div>
                 
                 {todo.subtasks.map(s => {
-                  const subDone = !!s.done || !!todo.done;
+                  const parentDone = forceParentUndone ? false : !!todo.done;
+                  const subDone = !!s.done || parentDone;
                   return (
                     <div key={s.id} style={{ display: "flex", gap: 8, alignItems: "center", justifyContent: "space-between" }}>
                       <div style={{ display: "flex", gap: 8, alignItems: "center", flex: 1 }}>
@@ -567,13 +888,23 @@ export default function TodoItem({ index, todo, onToggle, onRemove, onUpdate, is
             {/* inline confirm UI (visible when user checks recurring todo) */}
             {confirmOpen && (
               <div style={{ marginTop: 8, display: "flex", gap: 8 }}>
-                <button className="btn-plain" onClick={() => { setConfirmOpen(false); onToggle(todo.id, true); play("done", true); }}>
+                <button className="btn-plain" onClick={() => { setConfirmOpen(false); originalSubtasksRef.current = null; onToggle(todo.id, true); play("done", true); }}>
                   Create next
                 </button>
-                <button className="btn-plain" onClick={() => { setConfirmOpen(false); onToggle(todo.id, false); play("done", true); }}>
+                <button className="btn-plain" onClick={() => { setConfirmOpen(false); originalSubtasksRef.current = null; onToggle(todo.id, false); play("done", true); }}>
                   Mark done permanently
                 </button>
-                <button className="btn-plain" onClick={() => { setConfirmOpen(false); play("click"); }}>
+                <button
+                  className="btn-plain"
+                  onClick={() => {
+                    if (originalSubtasksRef.current) {
+                      onUpdate(todo.id, { subtasks: originalSubtasksRef.current }, "Cancelled, subtasks restored");
+                      originalSubtasksRef.current = null;
+                    }
+                    setConfirmOpen(false);
+                    play("click");
+                    }}
+                >
                   Cancel
                 </button>
               </div>
