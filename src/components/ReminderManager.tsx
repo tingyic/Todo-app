@@ -5,9 +5,20 @@ import { parseLocalDateTime } from "../utils/dates";
 type NotifOpts = NotificationOptions & { renotify?: boolean};
 type Props = { todos: Todo[]; enabled?: boolean };
 
+type FiredReminder = {
+  key: string;
+  todo: Todo;
+  label: string;
+  fireTime: number;
+};
+
 export default function ReminderManager({ todos, enabled = true }: Props) {
   const timers = useRef<Map<string, number>>(new Map()); // key => timerId
   const [toasts, setToasts] = useState<Array<{ id: string; title: string; when: string }>>([]);
+
+  // fired/triggered reminders that can be snoozed/dismissed
+  const [activeReminders, setActiveReminders] = useState<FiredReminder[]>([]);
+  
   const permissionRef = useRef<NotificationPermission | null>(null);
 
   useEffect(() => {
@@ -29,7 +40,11 @@ export default function ReminderManager({ todos, enabled = true }: Props) {
   }, []);
 
   // doNotify wrapped in useCallback so effect deps are stable (eslint happy)
-  const doNotify = useCallback((todo: Todo, label: string) => {
+  const doNotify = useCallback((todo: Todo, label: string, key: string, fireTime: number) => {
+    setActiveReminders(r => [
+      ...r,
+      { key, todo, label, fireTime }
+    ]);
     const title = `Reminder: ${todo.text}`;
     const bodyParts: string[] = [];
     if (todo.due) bodyParts.push(`Due: ${formatLocal(todo.due)}`);
@@ -53,6 +68,32 @@ export default function ReminderManager({ todos, enabled = true }: Props) {
     if (permissionRef.current === "default") setTimeout(() => void requestPermission(), 1000);
   }, [pushToast]);
 
+  // Snooze handler
+  function snooze(rem: FiredReminder, minutes: number) {
+    const todo = rem.todo;
+    if (!todo) {
+      setActiveReminders(a => a.filter(x => x.key !== rem.key));
+      return;
+    }
+
+    const newFire = Date.now() + minutes * 60_000;
+    const newKey = `${todo.id}::snooze${minutes}::${newFire}`;
+
+    const delay = Math.max(0, newFire - Date.now());
+    const timerId = window.setTimeout(() => {
+      doNotify(todo, `Snoozed ${minutes} min`, newKey, newFire);
+      timers.current.delete(newKey);
+    }, delay);
+
+    timers.current.set(newKey, timerId);
+
+    setActiveReminders(a => a.filter(x => x.key !== rem.key));
+  }
+
+  function dismiss(rem: FiredReminder) {
+    setActiveReminders(a => a.filter(x => x.key !== rem.key));
+  }
+
   useEffect(() => {
     if (!enabled) {
       timers.current.forEach(id => clearTimeout(id));
@@ -61,7 +102,7 @@ export default function ReminderManager({ todos, enabled = true }: Props) {
     }
 
     // helper to make key for a specific reminder minutes value
-    const makeKey = (todoId: string, minutes: number) => `${todoId}::${minutes}`;
+    const makeKey = (todoId: string, minutes: number, fireAt: number) => `${todoId}::${minutes}::${fireAt}`;
 
     function scheduleFor(todo: Todo) {
       if (!todo.due || todo.done) return;
@@ -70,16 +111,16 @@ export default function ReminderManager({ todos, enabled = true }: Props) {
 
       const reminders = Array.isArray(todo.reminders) ? todo.reminders : [];
       for (const m of reminders) {
-        const remindAt = dueDate.getTime() - Math.max(0, Math.floor(Number(m) || 0)) * 60_000;
+        const fireAt = dueDate.getTime() - Math.max(0, Math.floor(Number(m) || 0)) * 60_000;
         // skip reminders whose remindAt is past (we don't want to remind for expired deadlines)
-        if (remindAt <= Date.now()) continue;
+        if (fireAt <= Date.now()) continue;
 
-        const key = makeKey(todo.id, m);
+        const key = makeKey(todo.id, m, fireAt);
         if (timers.current.has(key)) continue; // already scheduled
 
-        const delay = Math.max(0, remindAt - Date.now());
+        const delay = Math.max(0, fireAt - Date.now());
         const timerId = window.setTimeout(() => {
-          doNotify(todo, m === 0 ? "Due now" : `Remind ${m} min before`);
+          doNotify(todo, m === 0 ? "Due now" : `Remind ${m} min before`, key, fireAt);
           timers.current.delete(key);
         }, delay);
         timers.current.set(key, timerId);
@@ -121,13 +162,35 @@ export default function ReminderManager({ todos, enabled = true }: Props) {
       }
     }, 60_000);
 
-    return () => {
-      clearInterval(reconciler);
-    };
+    return () => clearInterval(reconciler);
   }, [todos, enabled, doNotify]); // include doNotify to satisfy lint
 
   return (
     <>
+      {/* Snooze popup cards */}
+      <div className="snooze-stack">
+        {activeReminders.map(rem => (
+          <div key={rem.key} className="snooze-card" role="dialog" aria-live="polite">
+            <div className="snooze-title">{rem.todo.text}</div>
+            <div className="snooze-sub">{rem.label}</div>
+
+            <div className="snooze-actions">
+              <button className="snooze-btn" onClick={() => snooze(rem, 5)} aria-label="Snooze 5 minutes">Snooze 5m</button>
+              <button className="snooze-btn" onClick={() => snooze(rem, 15)} aria-label="Snooze 15 minutes">15m</button>
+              <button className="snooze-btn" onClick={() => snooze(rem, 60)} aria-label="Snooze 1 hour">1h</button>
+
+              <button
+                className="snooze-btn snooze-dismiss"
+                onClick={() => dismiss(rem)}
+                aria-label="Dismiss reminder"
+                title="Dismiss"
+              >
+                Dismiss
+              </button>
+            </div>
+          </div>
+        ))}
+      </div>
       <div style={{
         position: "fixed", right: 12, bottom: 12,
         display: "flex", flexDirection: "column", gap: 8, zIndex: 9999, maxWidth: 320,

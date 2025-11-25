@@ -1002,3 +1002,74 @@ kbd.help-kbd, .help-kbd kbd {
   transform: translate(-50%, -50%) scale(1);
   opacity: 0.06; /* fades out while expanding */
 }
+
+.snooze-stack {
+  position: fixed;
+  right: 14px;
+  bottom: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  z-index: 100000;
+  max-width: 360px;
+}
+
+.snooze-card {
+  background: var(--app-card);
+  color: var(--app-text);
+  border-radius: 10px;
+  padding: 12px 14px;
+  box-shadow: 0 8px 30px rgba(2, 6, 23, 0.08);
+  border: 1px solid var(--app-border);
+  min-width: 240px;
+  box-sizing: border-box;
+}
+
+.snooze-card .snooze-title {
+  font-weight: 700;
+  font-size: 14px;
+  line-height: 1.1;
+}
+.snooze-card .snooze-sub {
+  margin-top: 6px;
+  opacity: 0.85;
+  font-size: 13px;
+}
+
+.snooze-actions {
+  margin-top: 12px;
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.snooze-btn {
+  padding: 6px 10px;
+  border-radius: 8px;
+  background: var(--btn-plain-bg);
+  color: var(--app-text);
+  border: 1px solid var(--btn-plain-border);
+  cursor: pointer;
+  font-size: 12px;
+  transition: transform 120ms ease, box-shadow 120ms ease, opacity 120ms ease;
+}
+.snooze-btn:hover { transform: translateY(-2px); box-shadow: 0 8px 20px rgba(2, 6, 23, 0.06); }
+
+.snooze-btn.snooze-dismiss {
+  margin-left: auto;
+  opacity: 0.85;
+  background: transparent;
+  border: 1px solid var(--app-border);
+}
+
+.theme-dark .snooze-card {
+  /* keep var-based so it inherits dark values */
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.45);
+}
+
+@media (max-width: 420px) {
+  .snooze-stack { right: 10px; left: 10px; bottom: 12px; max-width: none; }
+  .snooze-card { min-width: auto; width: 100%; }
+  .snooze-actions { gap: 6px; }
+  .snooze-btn { padding: 6px 8px; font-size: 12px; }
+}
