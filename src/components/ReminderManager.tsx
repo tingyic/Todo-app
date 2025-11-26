@@ -12,6 +12,61 @@ type FiredReminder = {
   fireTime: number;
 };
 
+const DB_NAME = "todo-snoozes-v1";
+const DB_STORE = "snoozes";
+
+type SnoozeRecord = {
+  key: string;
+  todoId: string;
+  action?: string;
+  at: number;
+  createdAt: number;
+};
+
+function idbOpen(): Promise<IDBDatabase> {
+  return new Promise((resolve, reject) => {
+    const req = indexedDB.open(DB_NAME, 1);
+    req.onupgradeneeded = () => {
+      const db = req.result;
+      if (!db.objectStoreNames.contains(DB_STORE)) {
+        db.createObjectStore(DB_STORE, { keyPath: "key" });
+      }
+    };
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+  });
+}
+
+async function idbPut(item: SnoozeRecord) {
+  const db = await idbOpen();
+  return new Promise<void>((resolve, reject) => {
+    const tx = db.transaction(DB_STORE, "readwrite");
+    tx.objectStore(DB_STORE).put(item);
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+  });
+}
+
+async function idbDelete(key: string) {
+  const db = await idbOpen();
+  return new Promise<void>((resolve, reject) => {
+    const tx = db.transaction(DB_STORE, "readwrite");
+    tx.objectStore(DB_STORE).delete(key);
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+  });
+}
+
+async function idbGetAll() {
+  const db = await idbOpen();
+  return new Promise<SnoozeRecord[]>((resolve, reject) => {
+    const tx = db.transaction(DB_STORE, "readonly");
+    const req = tx.objectStore(DB_STORE).getAll();
+    req.onsuccess = () => resolve(req.result || []);
+    req.onerror = () => reject(req.error);
+  });
+}
+
 export default function ReminderManager({ todos, enabled = true }: Props) {
   const timers = useRef<Map<string, number>>(new Map()); // key => timerId
   const [toasts, setToasts] = useState<Array<{ id: string; title: string; when: string }>>([]);
@@ -20,9 +75,23 @@ export default function ReminderManager({ todos, enabled = true }: Props) {
   const [activeReminders, setActiveReminders] = useState<FiredReminder[]>([]);
   
   const permissionRef = useRef<NotificationPermission | null>(null);
+  const swRegRef = useRef<ServiceWorkerRegistration | null>(null);
 
   useEffect(() => {
     permissionRef.current = typeof Notification !== "undefined" ? Notification.permission : null;
+  }, []);
+
+  useEffect(() => {
+    if ("serviceWorker" in navigator && (location.protocol === "https:" || location.hostname === "localhost")) {
+      navigator.serviceWorker.register("/service-worker.js")
+      .then(reg => {
+        swRegRef.current = reg;
+      })
+      .catch(e => {
+        console.debug("SW register failed:", e);
+        swRegRef.current = null;
+      });
+    }
   }, []);
 
   async function requestPermission() {
@@ -39,34 +108,141 @@ export default function ReminderManager({ todos, enabled = true }: Props) {
     setTimeout(() => setToasts(t => t.filter(x => x.id !== id)), 10_000);
   }, []);
 
-  // doNotify wrapped in useCallback so effect deps are stable (eslint happy)
-  const doNotify = useCallback((todo: Todo, label: string, key: string, fireTime: number) => {
-    setActiveReminders(r => [
-      ...r,
-      { key, todo, label, fireTime }
-    ]);
+  // doNotify wrapped in useCallback so effect deps are stable
+  const doNotify = useCallback(async (todo: Todo, label: string, key: string, fireTime: number) => {
+    setActiveReminders(r => {
+      if (r.some(x => x.key === key)) return r;
+      return [...r, { key, todo, label, fireTime }];
+    });
     const title = `Reminder: ${todo.text}`;
     const bodyParts: string[] = [];
     if (todo.due) bodyParts.push(`Due: ${formatLocal(todo.due)}`);
     if (todo.tags?.length) bodyParts.push(`Tags: ${todo.tags.join(", ")}`);
     const body = [label, ...bodyParts].join(" • ");
 
+    const actions = [
+      { action: "snooze-5", title: "Snooze 5m" },
+      { action: "snooze-15", title: "Snooze 15m" },
+      { action: "snooze-60", title: "Snooze 1h" },
+      { action: "dismiss", title: "Dismiss" },
+    ];
+
+    try {
+      if (swRegRef.current && Notification.permission === "granted" && typeof swRegRef.current.showNotification === "function") {
+        await swRegRef.current.showNotification(title, {
+          body,
+          tag: `todo-reminder-${todo.id}`,
+          renotify: true,
+          data: { todoId: todo.id },
+          actions,
+        } as NotificationOptions);
+        return;
+      }
+    } catch (e) {
+      console.debug("sw showNotification failed:", e); 
+    }
+
     if (typeof Notification !== "undefined" && Notification.permission === "granted") {
       try {
-        // NotificationOptions in lib.dom may not include some keys in older TS versions;
-        // cast to any to be safe — this is only passed to browser API.
         const opts: NotifOpts = { body, tag: `todo-reminder-${todo.id}`, renotify: true};
         const n = new Notification(title, opts);
         n.onclick = () => (window.focus(), n.close());
         return;
-      } catch {
-        // fall through to in-app toast if creation fails
+      } catch (e) {
+        console.debug("page Notification failed:", e);
       }
     }
 
     pushToast(todo.id, title, body);
     if (permissionRef.current === "default") setTimeout(() => void requestPermission(), 1000);
   }, [pushToast]);
+
+  // schedule helper: schedules a JS timer and stores id in timers map
+  const scheduleNotify = useCallback((key: string, todoId: string, whenMs: number, label = "Reminder") => {
+    // clear existing for same key
+    if (timers.current.has(key)) {
+      clearTimeout(timers.current.get(key)!);
+      timers.current.delete(key);
+    }
+    const delay = Math.max(0, whenMs - Date.now());
+    const timeoutId = window.setTimeout(() => {
+      const todo = todos.find(t => t.id === todoId);
+      if (todo) doNotify(todo, label, key, whenMs);
+      timers.current.delete(key);
+      if (key.startsWith("snooze::")) {
+        void idbDelete(key).catch(() => {});
+      }
+    }, delay);
+    timers.current.set(key, timeoutId);
+  }, [doNotify, todos]);
+
+  const processAction = useCallback(async (action: string, todoId?: string) => {
+    if (!todoId) return;
+    if (action.startsWith("snooze-")) {
+      const minutes = Number(action.split("-")[1]) || 5;
+      const snoozeAt = Date.now() + minutes * 60_000;
+      const key = `snooze::${todoId}::${snoozeAt}`;
+      try {
+        await idbPut({ key, todoId, action, at: snoozeAt, createdAt: Date.now() });
+      } catch (e) {
+        console.debug("idbPut failed:", e);
+      }
+      scheduleNotify(key, todoId, snoozeAt, `Snoozed ${minutes} min`);
+      pushToast(todoId, `Snoozed ${minutes} min`, `Will remind in ${minutes} min`);
+      return;
+    }
+    if (action === "dismiss") {
+      // remove any active reminders in UI for that todo
+      setActiveReminders(a => a.filter(x => x.todo.id !== todoId));
+      pushToast(todoId, "Reminder dismissed", "");
+      return;
+    }
+  }, [scheduleNotify, pushToast]);
+
+  // Listen to messages from service worker (e.g. notification actions)
+  useEffect(() => {
+    function onSWMessage(ev: MessageEvent) {
+      const msg = ev.data;
+      if (!msg) return;
+      if (msg.type === "notification-action") {
+        // msg.action e.g. snooze-5, msg.todoId
+        void processAction(msg.action, msg.todoId);
+      } else if (msg.type === "notification-click") {
+        // user clicked the notification body
+        if (msg.todoId) pushToast(msg.todoId, "Notification clicked", "");
+      }
+    }
+
+    navigator.serviceWorker?.addEventListener("message", onSWMessage);
+    return () => {
+      navigator.serviceWorker?.removeEventListener("message", onSWMessage);
+    };
+  }, [processAction, pushToast]);
+
+  useEffect(() => {
+    let mounted = true;
+    (async () => {
+      try {
+        const rows = await idbGetAll();
+        if (!mounted) return;
+        for (const r of rows) {
+          if (!r || !r.key || !r.todoId || !r.at) continue;
+          const when = Number(r.at);
+          // if snooze time is in the past but within a small grace window (e.g. < 1m), fire immediate
+          if (when <= Date.now() + 60_000) {
+            const todo = todos.find(t => t.id === r.todoId);
+            if (todo) void doNotify(todo, `Snoozed reminder`, r.key, when);
+            await idbDelete(r.key).catch(() => {});
+            continue;
+          }
+          scheduleNotify(r.key, r.todoId, when, "Snoozed reminder");
+        }
+      } catch {
+        console.debug("idbGetAll failed or no indexedDB available");
+      }
+    })();
+    return () => { mounted = false; };
+  }, [doNotify, scheduleNotify, todos]);  
 
   // Snooze handler
   function snooze(rem: FiredReminder, minutes: number) {
@@ -79,19 +255,17 @@ export default function ReminderManager({ todos, enabled = true }: Props) {
     const newFire = Date.now() + minutes * 60_000;
     const newKey = `${todo.id}::snooze${minutes}::${newFire}`;
 
-    const delay = Math.max(0, newFire - Date.now());
-    const timerId = window.setTimeout(() => {
-      doNotify(todo, `Snoozed ${minutes} min`, newKey, newFire);
-      timers.current.delete(newKey);
-    }, delay);
+    void idbPut({ key: newKey, todoId: todo.id, action: `snooze-${minutes}`, at: newFire, createdAt: Date.now() })
+      .catch(e => console.debug("idbPut failed:", e));
 
-    timers.current.set(newKey, timerId);
-
+    scheduleNotify(newKey, todo.id, newFire, `Snoozed ${minutes} min`);
     setActiveReminders(a => a.filter(x => x.key !== rem.key));
+    pushToast(todo.id, `Snoozed ${minutes}m`, `We'll remind you in ${minutes} minutes`);
   }
 
   function dismiss(rem: FiredReminder) {
     setActiveReminders(a => a.filter(x => x.key !== rem.key));
+    void idbDelete(rem.key).catch(() => {});
   }
 
   useEffect(() => {
@@ -120,7 +294,7 @@ export default function ReminderManager({ todos, enabled = true }: Props) {
 
         const delay = Math.max(0, fireAt - Date.now());
         const timerId = window.setTimeout(() => {
-          doNotify(todo, m === 0 ? "Due now" : `Remind ${m} min before`, key, fireAt);
+          void doNotify(todo, m === 0 ? "Due now" : `Remind ${m} min before`, key, fireAt);
           timers.current.delete(key);
         }, delay);
         timers.current.set(key, timerId);
@@ -129,7 +303,7 @@ export default function ReminderManager({ todos, enabled = true }: Props) {
 
     function cancelAllFor(todoId: string) {
       for (const key of Array.from(timers.current.keys())) {
-        if (key.startsWith(`${todoId}::`)) {
+        if (key.includes(`::${todoId}::`) || key.startsWith(`snooze::${todoId}::`)) {
           const id = timers.current.get(key)!;
           clearTimeout(id);
           timers.current.delete(key);
@@ -148,8 +322,9 @@ export default function ReminderManager({ todos, enabled = true }: Props) {
 
     // clear timers for deleted todos
     for (const key of Array.from(timers.current.keys())) {
-      const [todoId] = key.split("::");
-      if (!currentIds.has(todoId)) {
+      const parts = key.split("::");
+      const maybeId = parts[1] ?? parts[0];
+      if (maybeId && !currentIds.has(maybeId)) {
         clearTimeout(timers.current.get(key)!);
         timers.current.delete(key);
       }
@@ -196,14 +371,14 @@ export default function ReminderManager({ todos, enabled = true }: Props) {
         display: "flex", flexDirection: "column", gap: 8, zIndex: 9999, maxWidth: 320,
       }}>
         {toasts.map(t => (
-          <div key={t.id} className="toast" style={{
-            background: "#111827", color: "#fff", padding: "10px 12px",
-            borderRadius: 8, boxShadow: "0 6px 20px rgba(2,6,23,0.6)"
+          <div key={t.id + t.when} className="toast" style={{
+            background: "var(--app-card)", color: "var(--app-text)", padding: "10px 12px",
+            borderRadius: 8, boxShadow: "0 6px 20px rgba(2, 6, 23, 0.6)"
           }}>
             <div style={{ fontWeight: 700, fontSize: 13 }}>{t.title}</div>
             <div style={{ fontSize: 12, opacity: 0.9, marginTop: 6 }}>{t.when}</div>
             <div style={{ marginTop: 8, display: "flex", justifyContent: "flex-end" }}>
-              <button onClick={() => setToasts(s => s.filter(x => x.id !== t.id))} style={{ background: "transparent", color: "#9ca3af", border: "none", cursor: "pointer" }}>Dismiss</button>
+              <button onClick={() => setToasts(s => s.filter(x => x.id !== t.id))} className="btn-plain">Dismiss</button>
             </div>
           </div>
         ))}

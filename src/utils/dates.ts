@@ -1,5 +1,5 @@
 // Small utilities for handling "datetime-local" strings
-// format: "YYYY-MM-DDTHH:mm" (no timezone) — treated as local time.
+// format: "YYYY-MM-DDTHH:mm"
 
 export function parseLocalDateTime(s: string | null): Date | null {
   if (!s) return null;
