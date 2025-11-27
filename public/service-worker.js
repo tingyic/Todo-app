@@ -25,26 +25,6 @@ async function idbPut(item) {
   });
 }
 
-async function idbDelete(key) {
-  const db = await idbOpen();
-  return new Promise((resolve, reject) => {
-    const tx = db.transaction(DB_STORE, "readwrite");
-    tx.objectStore(DB_STORE).delete(key);
-    tx.oncomplete = () => resolve();
-    tx.onerror = () => reject(tx.error);
-  });
-}
-
-async function idbGetAll() {
-  const db = await idbOpen();
-  return new Promise((resolve, reject) => {
-    const tx = db.transaction(DB_STORE, "readonly");
-    const req = tx.objectStore(DB_STORE).getAll();
-    req.onsuccess = () => resolve(req.result || []);
-    req.onerror = () => reject(req.error);
-  });
-}
-
 // Helper to post message to all client windows
 async function postToClients(msg) {
   const clientsList = await self.clients.matchAll({ type: "window", includeUncontrolled: true });
@@ -63,11 +43,42 @@ self.addEventListener("activate", (ev) => {
   ev.waitUntil(self.clients.claim());
 });
 
+self.addEventListener('push', (event) => {
+  let payload = {};
+  try {
+    payload = event.data ? event.data.json() : {};
+  } catch (e) {
+    // event.data might be a non-JSON string — fall back gracefully
+    payload = { title: 'Reminder', body: event.data?.text || '' };
+  }
+
+  const title = payload.title || 'Reminder';
+  const body = payload.body || '';
+  const tag = payload.tag || `todo-reminder-${payload.todoId || 'unknown'}`;
+
+  const actions = [
+    { action: 'snooze-5', title: 'Snooze 5m' },
+    { action: 'snooze-15', title: '15m' },
+    { action: 'snooze-60', title: '1h' },
+    { action: 'dismiss', title: 'Dismiss' },
+  ];
+
+  const options = {
+    body,
+    tag,
+    renotify: true,
+    data: { todoId: payload.todoId, sentAt: Date.now() },
+    actions,
+  };
+
+  event.waitUntil(self.registration.showNotification(title, options));
+});
+
 self.addEventListener("notificationclick", (event) => {
   const notification = event.notification;
   const action = event.action; // "snooze-5", "snooze-15", "snooze-60", "dismiss"
   const data = notification.data || {};
-  const todoId = data.todoId;
+  const todoId = data.todoId || null;
 
   // Always close
   notification.close();
@@ -75,13 +86,25 @@ self.addEventListener("notificationclick", (event) => {
   // If user clicked the body (no action), just focus/open the app
   if (!action) {
     event.waitUntil((async () => {
-      const all = await self.clients.matchAll({ type: "window", includeUncontrolled: true });
-      if (all.length > 0) {
-        all[0].focus();
-        all[0].postMessage({ type: "notification-click", todoId });
-      } else {
-        // open app, include query so client knows to handle if needed
-        await self.clients.openWindow("/?notifOpen=1&todo=" + encodeURIComponent(todoId || ""));
+      try {
+        const windowClients = await self.clients.matchAll({ type: "window", includeUncontrolled: true });
+        if (windowClients && windowClients.length) {
+          // prefer focusing an already-open client and post a message
+          const client = windowClients[0];
+          try {
+            client.postMessage({ type: "notification-click", todoId });
+            return client.focus();
+          } catch (e) {
+            return client.focus();
+          }
+        }
+        // fallback: open the app root (query params optional)
+        if (self.clients.openWindow) {
+          const url = "/?notifOpen=1" + (todoId ? "&todo=" + encodeURIComponent(todoId) : "");
+          return self.clients.openWindow(url);
+        }
+      } catch (e) {
+        // ignore
       }
     })());
     return;
@@ -91,26 +114,52 @@ self.addEventListener("notificationclick", (event) => {
   event.waitUntil((async () => {
     // persist the action in idb so clients can pick up even after reload
     const timestamp = Date.now();
-    const key = `action::${todoId || "unknown"}::${timestamp}`;
-    const record = {
-      key,
-      todoId,
-      action,
-      ts: timestamp,
-    };
-    try {
-      await idbPut(record);
-    } catch (err) {
-      // ignore storage failure
+
+    // If it's a snooze action like "snooze-5"
+    if (typeof action === "string" && action.startsWith("snooze-")) {
+      const minutes = Number(action.split("-")[1]) || 5;
+      // schedule target time (ms)
+      const at = Date.now() + minutes * 60_000;
+      const key = `snooze::${todoId || "unknown"}::${at}`;
+
+      await idbPut({
+        key,
+        todoId,
+        action,
+        at,
+        createdAt: timestamp,
+      }).catch(() => { /* best-effort */ });
+
+      // notify open clients immediately so UI updates if they are open
+      await postToClients({ type: "notification-action", action, todoId, ts: timestamp, at });
+
+      const windows = await self.clients.matchAll({ type: "window", includeUncontrolled: true });
+      if (!windows || windows.length === 0) {
+        if (self.clients.openWindow) {
+          const url = "/?notifAction=" + encodeURIComponent(action) + (todoId ? "&todo=" + encodeURIComponent(todoId) : "");
+          try { await self.clients.openWindow(url); } catch (e) { /* empty */ }
+        }
+      }
+
+      return;
     }
 
-    // notify any open clients to schedule in-memory timers and confirm
+    // If it's a dismiss action
+    if (action === "dismiss") {
+      const key = `dismiss::${todoId || "unknown"}::${timestamp}`;
+      await idbPut({ key, todoId, action: "dismiss", at: timestamp, createdAt: timestamp }).catch(() => {});
+      await postToClients({ type: "notification-action", action: "dismiss", todoId, ts: timestamp });
+
+      // try opening a client so user sees app if none open
+      const windows = await self.clients.matchAll({ type: "window", includeUncontrolled: true });
+      if (!windows || windows.length === 0) {
+        if (self.clients.openWindow) {
+          try { await self.clients.openWindow("/"); } catch (e) { /* ignore */ }
+        }
+      }
+      return;
+    }
+
     await postToClients({ type: "notification-action", action, todoId, ts: timestamp });
-
-    // If no client window open, open one so user sees the app
-    const windows = await self.clients.matchAll({ type: "window", includeUncontrolled: true });
-    if (!windows.length) {
-      await self.clients.openWindow("/?notifAction=" + encodeURIComponent(action) + "&todo=" + encodeURIComponent(todoId || ""));
-    }
   })());
 });
