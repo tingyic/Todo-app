@@ -57,9 +57,7 @@ function makeParticles(count = 42): Particle[] {
       size: Math.round(rand(18, 56)),
       startX: centerX + rand(-22, 22),
       startY: centerY + rand(-6, 18),
-      // longer duration for slower movement (1.4 - 2.8s)
       duration: rand(1.4, 2.8),
-      // larger delays for cascading effect (0 - 0.5s)
       delay: rand(0, 0.5),
       control: { cx, cy, ex, ey },
       rotation: rand(-140, 140),

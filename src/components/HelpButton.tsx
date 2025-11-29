@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from "react";
 /**
  * Floating Help FAB + modal that follows the user while scrolling.
  * - Opens by clicking the FAB
- * - Also opens when pressing "/" or "?" (shift+/ or direct ? depending on layout)
+ * - Also opens when pressing "/" or "?"
  * - Close with Esc, clicking overlay, or the Close button
  */
 

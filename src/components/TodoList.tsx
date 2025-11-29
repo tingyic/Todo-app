@@ -18,8 +18,6 @@ export default function TodoList({ todos, onToggle, onRemove, onUpdate, dustingI
     <ul className="todo-list space-y-2">
       {todos.map((todo, i) => (
         <li key={todo.id}>
-          {/* pass index prop so TodoItem can use it to set --i CSS var for stagger */
-          /* index is not persisted; it's only for animation timing */}
           <TodoItem
             index={i}
             todo={todo}
