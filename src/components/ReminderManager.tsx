@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, useCallback } from "react";
 import type { Todo } from "../types";
 import { parseLocalDateTime } from "../utils/dates";
+import { subscribeForPush } from "../utils/push";
 
 type NotifOpts = NotificationOptions & { renotify?: boolean};
 type Props = { todos: Todo[]; enabled?: boolean };
@@ -21,6 +22,19 @@ type SnoozeRecord = {
   action?: string;
   at: number;
   createdAt: number;
+};
+
+type SchedulePayload = {
+  title: string;
+  body: string;
+  todoId?: string;
+  tag?: string;
+};
+
+type ScheduleItem = {
+  key: string;
+  whenMs: number;
+  payload: SchedulePayload;
 };
 
 function idbOpen(): Promise<IDBDatabase> {
@@ -67,6 +81,16 @@ async function idbGetAll() {
   });
 }
 
+function getSubscriptionEndpoint(sub: PushSubscription | null): string | null {
+  if (!sub) return null;
+  try {
+    if (typeof (sub as PushSubscription).endpoint === "string") return (sub as PushSubscription).endpoint;
+  } catch {
+    // empty
+  }
+  return null;
+}
+
 export default function ReminderManager({ todos, enabled = true }: Props) {
   const timers = useRef<Map<string, number>>(new Map()); // key => timerId
   const [toasts, setToasts] = useState<Array<{ id: string; title: string; when: string }>>([]);
@@ -77,22 +101,188 @@ export default function ReminderManager({ todos, enabled = true }: Props) {
   const permissionRef = useRef<NotificationPermission | null>(null);
   const swRegRef = useRef<ServiceWorkerRegistration | null>(null);
 
+  const [pushEnabled, setPushEnabled] = useState<boolean>(false);
+  const [pushBusy, setPushBusy] = useState<boolean>(false);
+  const subEndpointRef = useRef<string | null>(null);
+
+  async function sendSchedulesToServer(endpoint: string, schedules: ScheduleItem[]) {
+    try {
+      await fetch("api/schedule", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ endpoint, schedules }),
+      });
+    } catch (err) {
+      console.debug("sendSchedulesToServer failed", err);
+    }
+  }
+
+  async function sendCancelToServer(endpoint: string, key: string) {
+    try {
+      await fetch("api/schedule/cancel", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ endpoint, key }),
+      });
+    } catch (err) {
+      console.debug("sendCancelToServer failed", err);
+    }
+  }
+
+  function buildSchedulesFromTodos(todosList: Todo[]): ScheduleItem[] {
+    const out: ScheduleItem[] = [];
+    for (const todo of todosList) {
+      if (!todo.due || todo.done) continue;
+      const dueDate = parseLocalDateTime(todo.due);
+      if (!dueDate) continue;
+      const reminders = Array.isArray(todo.reminders) ? todo.reminders : [];
+      for (const m of reminders) {
+        const whenMs = dueDate.getTime() - Math.max(0, Math.floor(Number(m) || 0)) * 60_000;
+        if (whenMs <= Date.now()) continue;
+        const key = `${todo.id}::${m}::${whenMs}`;
+        const payload = {
+          title: `Reminder: ${todo.text}`,
+          body: (m === 0 ? "Due now" : `Remind ${m} min before`) + (todo.due ? ` • Due: ${formatLocal(todo.due)}` : ""),
+          todoId: todo.id,
+        };
+        out.push({ key, whenMs, payload });
+      }
+    }
+    return out;
+  }
+
   useEffect(() => {
     permissionRef.current = typeof Notification !== "undefined" ? Notification.permission : null;
   }, []);
 
   useEffect(() => {
-    if ("serviceWorker" in navigator && (location.protocol === "https:" || location.hostname === "localhost")) {
-      navigator.serviceWorker.register("/service-worker.js")
-      .then(reg => {
+    if (!("serviceWorker" in navigator)) return;
+    if (!(location.protocol === "https:" || location.hostname === "localhost")) return;
+
+    let mounted = true;
+    (async () => {
+      try {
+        const reg = await navigator.serviceWorker.register("/service-worker.js");
+        if (!mounted) return;
         swRegRef.current = reg;
-      })
-      .catch(e => {
-        console.debug("SW register failed:", e);
+
+        // Wait for ready then check existing subscription
+        const ready = await navigator.serviceWorker.ready;
+        if (!mounted) return;
+        const sub = await ready.pushManager.getSubscription();
+        const endpoint = getSubscriptionEndpoint(sub);
+        subEndpointRef.current = endpoint;
+        setPushEnabled(Boolean(endpoint));
+      } catch (err) {
+        console.debug("SW register / subscription check failed", err);
         swRegRef.current = null;
-      });
-    }
+        subEndpointRef.current = null;
+        setPushEnabled(false);
+      }
+    })();
+
+    return () => {
+      mounted = false;
+    };
   }, []);
+
+  async function notifyServerUnsubscribe(endpoint: string | null) {
+    if (!endpoint) return;
+    try {
+      await fetch("/api/unsubscribe", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ endpoint }),
+      });
+    } catch (err) {
+      console.debug("notifyServerUnsubscribe failed", err);
+    }
+  }
+
+  async function enablePushNotifications() {
+    setPushBusy(true);
+    try {
+      // ask permission first
+      const perm = await Notification.requestPermission();
+      if (perm !== "granted") {
+        pushToast("push-denied", "Notifications blocked", "Please enable notifications in your browser");
+        setPushBusy(false);
+        return;
+      }
+
+      // fetch public key from server (server must be running)
+      const r = await fetch("/config/push-public-key");
+      if (!r.ok) {
+        pushToast("push-error", "Failed to get public key", "Server returned " + r.status);
+        setPushBusy(false);
+        return;
+      }
+      const json = await r.json();
+      const publicKey = json.publicKey || json.publicKey || json.public_key;
+      if (!publicKey) {
+        pushToast("push-error", "No public key", "Server returned malformed response");
+        setPushBusy(false);
+        return;
+      }
+
+      // create subscription
+      const sub = await subscribeForPush(publicKey);
+
+      // send subscription to server
+      const resp = await fetch("/api/subscribe", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ subscription: sub }),
+      });
+
+      if (!resp.ok) {
+        pushToast("push-error", "Subscribe failed", `Server returned ${resp.status}`);
+        setPushBusy(false);
+        return;
+      }
+
+
+      const endpoint = getSubscriptionEndpoint(sub);
+      subEndpointRef.current = endpoint;
+      const schedules = buildSchedulesFromTodos(todos);
+      if (endpoint && schedules.length) {
+        void sendSchedulesToServer(endpoint, schedules);
+      }
+
+      setPushEnabled(true);
+      pushToast("push-enabled", "Push enabled", "You'll receive reminders while the app is closed");
+    } catch (err) {
+      console.error("enablePushNotifications error", err);
+      pushToast("push-error", "Push failed", String(err));
+    } finally {
+      setPushBusy(false);
+    }
+  }
+
+  async function disablePushNotifications() {
+    setPushBusy(true);
+    try {
+      const ready = await navigator.serviceWorker.ready;
+      const sub = await ready.pushManager.getSubscription();
+      const endpoint = getSubscriptionEndpoint(sub);
+      if (sub) {
+        try {
+          await sub.unsubscribe();
+        } catch (e) {
+          console.debug("unsubscribe failed locally", e);
+        }
+      }
+      await notifyServerUnsubscribe(endpoint);
+      subEndpointRef.current = null;
+      setPushEnabled(false);
+      pushToast("push-disabled", "Push disabled", "You won't receive reminders while the app is closed");
+    } catch (err) {
+      console.error("disablePushNotifications error", err);
+      pushToast("push-error", "Disable failed", String(err));
+    } finally {
+      setPushBusy(false);
+    }
+  }
 
   async function requestPermission() {
     if (typeof Notification === "undefined") return;
@@ -174,7 +364,23 @@ export default function ReminderManager({ todos, enabled = true }: Props) {
       }
     }, delay);
     timers.current.set(key, timeoutId);
-  }, [doNotify, todos]);
+
+    const endpoint = subEndpointRef.current;
+    if (endpoint) {
+      const todo = todos.find((t) => t.id === todoId);
+      if (todo) {
+        const payload = {
+          title: `Reminder: ${todo.text}`,
+          body: label + (todo.due ? ` • Due: ${formatLocal(todo.due)}` : ""),
+          todoId,
+          tag: `todo-reminder-${todo.id}`,
+        };
+        const schedules: ScheduleItem[] = [{ key, whenMs, payload }];
+        void sendSchedulesToServer(endpoint, schedules);
+      }
+    }
+  }, [doNotify, todos]
+);
 
   const processAction = useCallback(async (action: string, todoId?: string) => {
     if (!todoId) return;
@@ -188,6 +394,19 @@ export default function ReminderManager({ todos, enabled = true }: Props) {
         console.debug("idbPut failed:", e);
       }
       scheduleNotify(key, todoId, snoozeAt, `Snoozed ${minutes} min`);
+
+      const endpoint = subEndpointRef.current;
+      if (endpoint) {
+        const payload = {
+          title: `Reminder (snoozed)`,
+          body: `Snoozed ${minutes} min`,
+          todoId,
+          tag: `todo-reminder-${todoId}`,
+        };
+        const schedules: ScheduleItem[] = [{ key, whenMs: snoozeAt, payload }];
+        void sendSchedulesToServer(endpoint, schedules);
+      }
+
       pushToast(todoId, `Snoozed ${minutes} min`, `Will remind in ${minutes} min`);
       return;
     }
@@ -195,9 +414,16 @@ export default function ReminderManager({ todos, enabled = true }: Props) {
       // remove any active reminders in UI for that todo
       setActiveReminders(a => a.filter(x => x.todo.id !== todoId));
       pushToast(todoId, "Reminder dismissed", "");
+
+      const endpoint = subEndpointRef.current;
+      if (endpoint) {
+        void sendCancelToServer(endpoint, `snooze::${todoId}`);
+        void sendCancelToServer(endpoint, `${todoId}::`);
+      }
       return;
     }
-  }, [scheduleNotify, pushToast]);
+  }, [scheduleNotify, pushToast]
+);
 
   // Listen to messages from service worker (e.g. notification actions)
   useEffect(() => {
@@ -259,6 +485,20 @@ export default function ReminderManager({ todos, enabled = true }: Props) {
       .catch(e => console.debug("idbPut failed:", e));
 
     scheduleNotify(newKey, todo.id, newFire, `Snoozed ${minutes} min`);
+
+    const endpoint = subEndpointRef.current;
+    if (endpoint) {
+      const payload = {
+        title: "Reminder (snoozed)",
+        body: `Snoozed ${minutes} min`,
+        todoId: todo.id,
+        tag: `todo-reminder-${todo.id}`,
+      };
+      const schedules: ScheduleItem[] = [{ key: newKey, whenMs: newFire, payload }];
+      void sendSchedulesToServer(endpoint, schedules);
+      subEndpointRef.current = endpoint;
+    }
+
     setActiveReminders(a => a.filter(x => x.key !== rem.key));
     pushToast(todo.id, `Snoozed ${minutes}m`, `We'll remind you in ${minutes} minutes`);
   }
@@ -266,6 +506,9 @@ export default function ReminderManager({ todos, enabled = true }: Props) {
   function dismiss(rem: FiredReminder) {
     setActiveReminders(a => a.filter(x => x.key !== rem.key));
     void idbDelete(rem.key).catch(() => {});
+
+    const endpoint = subEndpointRef.current;
+    if (endpoint) void sendCancelToServer(endpoint, rem.key);
   }
 
   useEffect(() => {
@@ -286,7 +529,7 @@ export default function ReminderManager({ todos, enabled = true }: Props) {
       const reminders = Array.isArray(todo.reminders) ? todo.reminders : [];
       for (const m of reminders) {
         const fireAt = dueDate.getTime() - Math.max(0, Math.floor(Number(m) || 0)) * 60_000;
-        // skip reminders whose remindAt is past (we don't want to remind for expired deadlines)
+        // skip reminders whose remindAt is past
         if (fireAt <= Date.now()) continue;
 
         const key = makeKey(todo.id, m, fireAt);
@@ -307,6 +550,9 @@ export default function ReminderManager({ todos, enabled = true }: Props) {
           const id = timers.current.get(key)!;
           clearTimeout(id);
           timers.current.delete(key);
+
+          const endpoint = subEndpointRef.current;
+          if (endpoint) void sendCancelToServer(endpoint, key);
         }
       }
     }
@@ -327,6 +573,8 @@ export default function ReminderManager({ todos, enabled = true }: Props) {
       if (maybeId && !currentIds.has(maybeId)) {
         clearTimeout(timers.current.get(key)!);
         timers.current.delete(key);
+        const endpoint = subEndpointRef.current;
+        if (endpoint) void sendCancelToServer(endpoint, key);
       }
     }
 
@@ -338,10 +586,36 @@ export default function ReminderManager({ todos, enabled = true }: Props) {
     }, 60_000);
 
     return () => clearInterval(reconciler);
-  }, [todos, enabled, doNotify]); // include doNotify to satisfy lint
+  }, [todos, enabled, doNotify]);
 
   return (
     <>
+      {/* Small push control for user to opt-in */}
+      <div style={{ position: "fixed", right: 12, bottom: 12, display: "flex", flexDirection: "column", gap: 8, zIndex: 9999, maxWidth: 320 }}>
+        <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+          {pushEnabled ? (
+            <button
+              className="btn-plain"
+              onClick={() => void disablePushNotifications()}
+              disabled={pushBusy}
+              aria-pressed="true"
+              title="Disable push notifications"
+            >
+              {pushBusy ? "Turning off..." : "Disable push notifications"}
+            </button>
+          ) : (
+            <button
+              className="btn-plain"
+              onClick={() => void enablePushNotifications()}
+              disabled={pushBusy}
+              title="Enable push notifications"
+            >
+              {pushBusy ? "Enabling..." : "Enable push notifications"}
+            </button>
+          )}
+        </div>
+      </div>
+
       {/* Snooze popup cards */}
       <div className="snooze-stack">
         {activeReminders.map(rem => (
@@ -366,6 +640,8 @@ export default function ReminderManager({ todos, enabled = true }: Props) {
           </div>
         ))}
       </div>
+
+      {/* Toasts */}
       <div style={{
         position: "fixed", right: 12, bottom: 12,
         display: "flex", flexDirection: "column", gap: 8, zIndex: 9999, maxWidth: 320,

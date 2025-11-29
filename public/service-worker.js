@@ -43,24 +43,24 @@ self.addEventListener("activate", (ev) => {
   ev.waitUntil(self.clients.claim());
 });
 
-self.addEventListener('push', (event) => {
+self.addEventListener("push", (event) => {
   let payload = {};
   try {
     payload = event.data ? event.data.json() : {};
   } catch (e) {
-    // event.data might be a non-JSON string — fall back gracefully
-    payload = { title: 'Reminder', body: event.data?.text || '' };
+    // event.data might be a non-JSON string (text), fall back gracefully
+    payload = { title: "Reminder", body: event.data ? event.data.text() : "" };
   }
 
-  const title = payload.title || 'Reminder';
-  const body = payload.body || '';
-  const tag = payload.tag || `todo-reminder-${payload.todoId || 'unknown'}`;
+  const title = payload.title || "Reminder";
+  const body = payload.body || "";
+  const tag = payload.tag || `todo-reminder-${payload.todoId || "unknown"}`;
 
   const actions = [
-    { action: 'snooze-5', title: 'Snooze 5m' },
-    { action: 'snooze-15', title: '15m' },
-    { action: 'snooze-60', title: '1h' },
-    { action: 'dismiss', title: 'Dismiss' },
+    { action: "snooze-5", title: "Snooze 5m" },
+    { action: "snooze-15", title: "Snooze 15m" },
+    { action: "snooze-60", title: "Snooze 1h" },
+    { action: "dismiss", title: "Dismiss" },
   ];
 
   const options = {
@@ -162,4 +162,16 @@ self.addEventListener("notificationclick", (event) => {
 
     await postToClients({ type: "notification-action", action, todoId, ts: timestamp });
   })());
+});
+
+self.addEventListener("pushsubscriptionchange", (event) => {
+  event.waitUntil(
+    (async () => {
+      try {
+        await postToClients({ type: "push-subscription-changed", reason: "subscriptionchange" });
+      } catch (e) {
+        // ignore
+      }
+    })()
+  );
 });
