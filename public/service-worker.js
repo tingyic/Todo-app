@@ -98,7 +98,7 @@ self.addEventListener("notificationclick", (event) => {
             return client.focus();
           }
         }
-        // fallback: open the app root (query params optional)
+        // fallback: open the app root
         if (self.clients.openWindow) {
           const url = "/?notifOpen=1" + (todoId ? "&todo=" + encodeURIComponent(todoId) : "");
           return self.clients.openWindow(url);

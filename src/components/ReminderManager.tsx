@@ -37,6 +37,13 @@ type ScheduleItem = {
   payload: SchedulePayload;
 };
 
+type Toast = {
+  id: string;
+  uid: string;
+  title: string;
+  when: string;
+}
+
 function idbOpen(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
     const req = indexedDB.open(DB_NAME, 1);
@@ -84,7 +91,7 @@ async function idbGetAll() {
 function getSubscriptionEndpoint(sub: PushSubscription | null): string | null {
   if (!sub) return null;
   try {
-    if (typeof (sub as PushSubscription).endpoint === "string") return (sub as PushSubscription).endpoint;
+    if (typeof sub.endpoint === "string") return sub.endpoint;
   } catch {
     // empty
   }
@@ -93,7 +100,7 @@ function getSubscriptionEndpoint(sub: PushSubscription | null): string | null {
 
 export default function ReminderManager({ todos, enabled = true }: Props) {
   const timers = useRef<Map<string, number>>(new Map()); // key => timerId
-  const [toasts, setToasts] = useState<Array<{ id: string; title: string; when: string }>>([]);
+  const [toasts, setToasts] = useState<Toast[]>([]);
 
   // fired/triggered reminders that can be snoozed/dismissed
   const [activeReminders, setActiveReminders] = useState<FiredReminder[]>([]);
@@ -199,6 +206,20 @@ export default function ReminderManager({ todos, enabled = true }: Props) {
     }
   }
 
+  const pushToast = useCallback((id: string, title: string, when: string) => {
+    const uid = `${id}:${Date.now()}:${Math.floor(Math.random() * 10_000)}`;
+    console.debug("[pushToast] add", { id, uid, title, when });
+    setToasts((prev) => [{ id, uid, title, when }, ...prev]);
+
+    const t = setTimeout(() => {
+      console.debug("[pushToast] auto-remove", uid);
+      setToasts((prev) => prev.filter((x) => x.uid !== uid));
+      window.clearTimeout(t);
+    }, 10_000);
+
+    return uid;
+  }, []);
+
   async function enablePushNotifications() {
     setPushBusy(true);
     try {
@@ -284,6 +305,48 @@ export default function ReminderManager({ todos, enabled = true }: Props) {
     }
   }
 
+  useEffect(() => {
+    if (!enabled && pushEnabled) {
+      let mounted = true;
+      (async () => {
+        setPushBusy(true);
+        try {
+          const ready = await navigator.serviceWorker.ready;
+          const sub = await ready.pushManager.getSubscription();
+          const endpoint = getSubscriptionEndpoint(sub);
+          if (sub) {
+            try {
+              await sub.unsubscribe();
+            } catch (e) {
+              console.debug("unsubscribe failed locally", e);
+            }
+          }
+          try {
+            if (endpoint) {
+              await fetch("/api/unsubscribe", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ endpoint }),
+              });
+            }
+          } catch (e) {
+            console.debug("notifyServerUnsubscribe failed", e);
+          }
+          if (!mounted) return;
+          subEndpointRef.current = null;
+          setPushEnabled(false);
+          pushToast("push-disabled", "Push disabled", "You won't receive reminders while the app is closed");
+        } catch (err) {
+          console.error("auto-disable failed", err);
+          pushToast("push-error", "Auto-disable failed", String(err));
+        } finally {
+          if (mounted) setPushBusy(false);
+        }
+      })();
+      return () => { mounted = false; };
+    }
+  }, [enabled, pushEnabled, pushToast]);
+
   async function requestPermission() {
     if (typeof Notification === "undefined") return;
     try {
@@ -292,11 +355,6 @@ export default function ReminderManager({ todos, enabled = true }: Props) {
       permissionRef.current = "denied";
     }
   }
-
-  const pushToast = useCallback((id: string, title: string, when: string) => {
-    setToasts(t => [{ id, title, when }, ...t].slice(0, 5));
-    setTimeout(() => setToasts(t => t.filter(x => x.id !== id)), 10_000);
-  }, []);
 
   // doNotify wrapped in useCallback so effect deps are stable
   const doNotify = useCallback(async (todo: Todo, label: string, key: string, fireTime: number) => {
@@ -643,18 +701,21 @@ export default function ReminderManager({ todos, enabled = true }: Props) {
 
       {/* Toasts */}
       <div style={{
-        position: "fixed", right: 12, bottom: 12,
+        position: "fixed", right: 12, bottom: 80,
         display: "flex", flexDirection: "column", gap: 8, zIndex: 9999, maxWidth: 320,
       }}>
-        {toasts.map(t => (
-          <div key={t.id + t.when} className="toast" style={{
+        {toasts.slice(0, 3).map(t => (
+          <div key={t.uid} className="toast" data-toast-uid={t.uid} style={{
             background: "var(--app-card)", color: "var(--app-text)", padding: "10px 12px",
             borderRadius: 8, boxShadow: "0 6px 20px rgba(2, 6, 23, 0.6)"
           }}>
             <div style={{ fontWeight: 700, fontSize: 13 }}>{t.title}</div>
             <div style={{ fontSize: 12, opacity: 0.9, marginTop: 6 }}>{t.when}</div>
             <div style={{ marginTop: 8, display: "flex", justifyContent: "flex-end" }}>
-              <button onClick={() => setToasts(s => s.filter(x => x.id !== t.id))} className="btn-plain">Dismiss</button>
+              <button onClick={() => {
+                console.debug("[toast] manual-dismiss", t.uid);
+                setToasts(s => s.filter(x => x.uid !== t.uid));
+              }} className="btn-plain">Dismiss</button>
             </div>
           </div>
         ))}
