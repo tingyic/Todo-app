@@ -33,6 +33,22 @@ app.post("/api/subscribe", (req, res) => {
   return res.json({ ok: true });
 });
 
+app.post("/api/unsubscribe", (req, res) => {
+  try {
+    const { endpoint } = req.body || {};
+    if (!endpoint) return res.status(400).json({ error: "missing endpoint" });
+
+    const existed = subscriptions.delete(endpoint);
+    scheduledJobs.delete(endpoint);
+    console.log("unsub:", endpoint, "removed:", !!existed, "subs now:", subscriptions.size);
+
+    return res.json({ ok: true, removed: !!existed });
+  } catch (err) {
+    console.error("/api/unsubscribe error", err);
+    return res.status(500).json({ error: "failed" });
+  }
+});
+
 app.post("/notify-test", async (req, res) => {
   try {
     if (!subscriptions.size) {
