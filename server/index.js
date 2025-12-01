@@ -19,6 +19,8 @@ app.use(bodyParser.json());
 
 const subscriptions = new Map();
 
+app.get("/", (req, res) => res.send("todo-push server ok"));
+
 app.get("/config/push-public-key", (req, res) => {
   res.json({ publicKey: VAPID_PUBLIC });
 });
