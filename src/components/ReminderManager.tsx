@@ -3,6 +3,11 @@ import type { Todo } from "../types";
 import { parseLocalDateTime } from "../utils/dates";
 import { subscribeForPush } from "../utils/push";
 
+const SERVER_ORIGIN = import.meta.env.VITE_PUSH_SERVER_ORIGIN || "";
+function serverUrl(path: string) {
+  return SERVER_ORIGIN ? `${SERVER_ORIGIN}${path}` : path;
+}
+
 type NotifOpts = NotificationOptions & { renotify?: boolean};
 type Props = { todos: Todo[]; enabled?: boolean };
 
@@ -114,7 +119,7 @@ export default function ReminderManager({ todos, enabled = true }: Props) {
 
   async function sendSchedulesToServer(endpoint: string, schedules: ScheduleItem[]) {
     try {
-      await fetch("api/schedule", {
+      await fetch(serverUrl("/api/schedule"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ endpoint, schedules }),
@@ -126,7 +131,7 @@ export default function ReminderManager({ todos, enabled = true }: Props) {
 
   async function sendCancelToServer(endpoint: string, key: string) {
     try {
-      await fetch("api/schedule/cancel", {
+      await fetch(serverUrl("/api/schedule/cancel"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ endpoint, key }),
@@ -196,7 +201,7 @@ export default function ReminderManager({ todos, enabled = true }: Props) {
   async function notifyServerUnsubscribe(endpoint: string | null) {
     if (!endpoint) return;
     try {
-      await fetch("/api/unsubscribe", {
+      await fetch(serverUrl("/api/unsubscribe"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ endpoint }),
@@ -232,7 +237,7 @@ export default function ReminderManager({ todos, enabled = true }: Props) {
       }
 
       // fetch public key from server (server must be running)
-      const r = await fetch("/config/push-public-key");
+      const r = await fetch(serverUrl("/config/push-public-key"));
       if (!r.ok) {
         pushToast("push-error", "Failed to get public key", "Server returned " + r.status);
         setPushBusy(false);
@@ -250,7 +255,7 @@ export default function ReminderManager({ todos, enabled = true }: Props) {
       const sub = await subscribeForPush(publicKey);
 
       // send subscription to server
-      const resp = await fetch("/api/subscribe", {
+      const resp = await fetch(serverUrl("/api/subscribe"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ subscription: sub }),
@@ -323,7 +328,7 @@ export default function ReminderManager({ todos, enabled = true }: Props) {
           }
           try {
             if (endpoint) {
-              await fetch("/api/unsubscribe", {
+              await fetch(serverUrl("/api/unsubscribe"), {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({ endpoint }),
