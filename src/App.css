@@ -704,10 +704,6 @@ button.clear-completed.btn-danger:active {
   box-sizing: border-box;
 }
 
-.priority-pill.prio-high { color: var(--prio-high); background: var(--prio-high-bg); }
-.priority-pill.prio-medium { color: var(--prio-medium); background: var(--prio-medium-bg); }
-.priority-pill.prio-low { color: var(--prio-low); background: var(--prio-low-bg); }
-
 .subtask-title.subtask-done,
 .todo-item.todo-done .subtask-title,
 .todo-item.todo-done .priority-pill,
