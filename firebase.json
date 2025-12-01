@@ -7,10 +7,11 @@
       "**/node_modules/**"
     ],
     "rewrites": [
-      {
-        "source": "**",
-        "destination": "/index.html"
-      }
+      { "source": "/config/**", "function": "pushServer" },
+      { "source": "/api/**", "function": "pushServer" },
+      { "source": "/notify-test", "function": "pushServer" },
+      { "source": "/api/push/send", "function": "pushServer" },
+      { "source": "**", "destination": "/index.html" }
     ]
   }
 }
