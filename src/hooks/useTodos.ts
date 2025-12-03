@@ -276,6 +276,11 @@ export function useTodos() {
     dispatch({ type: "SET_ALL", done });
   };
 
+  const setTodos = (newTodos: Todo[]) => {
+    pushHistory();
+    dispatch({ type: "INIT", todos: newTodos });
+  }
+
   return {
     todos: state.todos,
     add,
@@ -284,6 +289,7 @@ export function useTodos() {
     update,
     clearCompleted,
     setAll,
+    setTodos,
     autoCreateNext,
     setAutoCreateNext,
     undo,

@@ -17,6 +17,7 @@ export default function App() {
     update,
     clearCompleted,
     setAll,
+    setTodos,
     undo,
     redo,
     canUndo,
@@ -451,6 +452,8 @@ export default function App() {
               setTimeout(() => setCelebrate(false), 2000);
             }
           }}
+          todos={todos}
+          setTodos={setTodos}
         />
 
         <main>
@@ -506,7 +509,7 @@ export default function App() {
               reindeer
             </a>
           </div>
-          <div> Version 1.8.5</div>
+          <div> Version 2.0</div>
         </footer>
       </div>
 
