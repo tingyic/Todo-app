@@ -454,6 +454,7 @@ export default function App() {
           }}
           todos={todos}
           setTodos={setTodos}
+          showToast={showToast}
         />
 
         <main>
