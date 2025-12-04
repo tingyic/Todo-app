@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, useCallback } from "react";
 import type { Todo } from "../types";
 import { parseLocalDateTime } from "../utils/dates";
-import { subscribeForPush } from "../utils/push";
+import { subscribeForPush, getPushPublicKey } from "../utils/push";
 
 const SERVER_ORIGIN = import.meta.env.VITE_PUSH_SERVER_ORIGIN || "";
 function serverUrl(path: string) {
@@ -83,7 +83,7 @@ async function idbDelete(key: string) {
   });
 }
 
-async function idbGetAll() {
+async function idbGetAll(): Promise<SnoozeRecord[]> {
   const db = await idbOpen();
   return new Promise<SnoozeRecord[]>((resolve, reject) => {
     const tx = db.transaction(DB_STORE, "readonly");
@@ -96,7 +96,7 @@ async function idbGetAll() {
 function getSubscriptionEndpoint(sub: PushSubscription | null): string | null {
   if (!sub) return null;
   try {
-    if (typeof sub.endpoint === "string") return sub.endpoint;
+    if (typeof sub.endpoint === "string" && sub.endpoint.length > 0) return sub.endpoint;
   } catch {
     // empty
   }
@@ -152,7 +152,7 @@ export default function ReminderManager({ todos, enabled = true }: Props) {
         const whenMs = dueDate.getTime() - Math.max(0, Math.floor(Number(m) || 0)) * 60_000;
         if (whenMs <= Date.now()) continue;
         const key = `${todo.id}::${m}::${whenMs}`;
-        const payload = {
+        const payload: SchedulePayload = {
           title: `Reminder: ${todo.text}`,
           body: (m === 0 ? "Due now" : `Remind ${m} min before`) + (todo.due ? ` • Due: ${formatLocal(todo.due)}` : ""),
           todoId: todo.id,
@@ -236,17 +236,9 @@ export default function ReminderManager({ todos, enabled = true }: Props) {
         return;
       }
 
-      // fetch public key from server (server must be running)
-      const r = await fetch(serverUrl("/config/push-public-key"));
-      if (!r.ok) {
-        pushToast("push-error", "Failed to get public key", "Server returned " + r.status);
-        setPushBusy(false);
-        return;
-      }
-      const json = await r.json();
-      const publicKey = json.publicKey || json.publicKey || json.public_key;
+      const publicKey = await getPushPublicKey();
       if (!publicKey) {
-        pushToast("push-error", "No public key", "Server returned malformed response");
+        pushToast("push-error", "Failed to get public key", "Server unavailable or CORS blocked");
         setPushBusy(false);
         return;
       }
@@ -266,7 +258,6 @@ export default function ReminderManager({ todos, enabled = true }: Props) {
         setPushBusy(false);
         return;
       }
-
 
       const endpoint = getSubscriptionEndpoint(sub);
       subEndpointRef.current = endpoint;

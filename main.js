@@ -64,3 +64,16 @@ ipcMain.handle('read-data', async (ev, name) => {
     return { ok: false, error: String(err) };
   }
 });
+
+ipcMain.handle('fetch-push-public-key', async () => {
+  try {
+    const url = 'https://todo-app-wxtc.onrender.com/config/push-public-key';
+    const res = await fetch(url, { method: 'GET' });
+    if (!res.ok) throw new Error(`Status ${res.status}`);
+    const json = await res.json();
+    return { ok: true, publicKey: json.publicKey ?? null };
+  } catch (err) {
+    console.error('fetch-push-public-key failed', err);
+    return { ok: false, error: String(err) };
+  }
+});
