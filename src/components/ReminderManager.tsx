@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, useCallback } from "react";
 import type { Todo } from "../types";
 import { parseLocalDateTime } from "../utils/dates";
-import { subscribeForPush, getPushPublicKey } from "../utils/push";
+import { getPushPublicKey, subscribeForPush } from "../utils/push";
 
 const SERVER_ORIGIN = import.meta.env.VITE_PUSH_SERVER_ORIGIN || "";
 function serverUrl(path: string) {
@@ -102,6 +102,14 @@ function getSubscriptionEndpoint(sub: PushSubscription | null): string | null {
   }
   return null;
 }
+
+type ElectronAPI = {
+  fetchPushPublicKey?: () => Promise<{ ok: boolean; publicKey?: string | null; error?: string }>;
+  showNotification?: (payload: { title?: string; body?: string }) => Promise<{ ok?: boolean }>;
+  schedulesAdd?: (schedule: ScheduleItem) => Promise<{ ok?: boolean }>;
+  schedulesRemove?: (key: string) => Promise<{ ok?: boolean }>;
+  schedulesList?: () => Promise<{ ok?: boolean; schedules?: ScheduleItem[] }>;
+};
 
 export default function ReminderManager({ todos, enabled = true }: Props) {
   const timers = useRef<Map<string, number>>(new Map()); // key => timerId
@@ -228,34 +236,81 @@ export default function ReminderManager({ todos, enabled = true }: Props) {
   async function enablePushNotifications() {
     setPushBusy(true);
     try {
-      // ask permission first
+      const win = window as unknown as { electronAPI?: ElectronAPI };
+      const isElectron = typeof window !== "undefined" && !!win.electronAPI && typeof win.electronAPI.fetchPushPublicKey === "function";
+
+      // If running in Electron, skip Web Push subscription
+      if (isElectron) {
+        pushToast("push-electron", "Push not available", "Web Push is not supported in the desktop app. Native notifications can be used instead.");
+        if (win.electronAPI?.showNotification) {
+          try {
+            await win.electronAPI.showNotification({ title: "Reminders", body: "Native notifications are available in the desktop app." });
+          } catch {
+            // ignore
+          }
+        }
+        setPushEnabled(true);
+        return;
+      }
+
+      // === Browser (web) flow ===
+      if (typeof navigator === "undefined" || typeof window === "undefined") {
+        pushToast("push-unsupported", "Push not supported", "No navigator/window available.");
+        return;
+      }
+      if (!("serviceWorker" in navigator) || typeof PushManager === "undefined") {
+        pushToast("push-unsupported", "Push not supported", "Your browser doesn't support service workers or Push API.");
+        return;
+      }
+      if (!(location.protocol === "https:" || location.hostname === "localhost")) {
+        pushToast("push-insecure", "Push requires HTTPS", "Push only works on HTTPS or on localhost.");
+        return;
+      }
+
       const perm = await Notification.requestPermission();
       if (perm !== "granted") {
-        pushToast("push-denied", "Notifications blocked", "Please enable notifications in your browser");
-        setPushBusy(false);
+        pushToast("push-denied", "Notifications blocked", "Please enable notifications in your browser.");
         return;
       }
 
       const publicKey = await getPushPublicKey();
       if (!publicKey) {
         pushToast("push-error", "Failed to get public key", "Server unavailable or CORS blocked");
-        setPushBusy(false);
+        return;
+      }
+
+      try {
+        await navigator.serviceWorker.register("/service-worker.js");
+      } catch (err) {
+        console.error("service worker register failed", err);
+        pushToast("push-error", "SW registration failed", String(err));
         return;
       }
 
       // create subscription
-      const sub = await subscribeForPush(publicKey);
+      let sub: PushSubscription;
+      try {
+        sub = await subscribeForPush(publicKey);
+      } catch (err) {
+        console.error("subscribeForPush failed", err);
+        pushToast("push-error", "Subscription failed", String(err));
+        return;
+      }
 
       // send subscription to server
-      const resp = await fetch(serverUrl("/api/subscribe"), {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ subscription: sub }),
-      });
-
-      if (!resp.ok) {
-        pushToast("push-error", "Subscribe failed", `Server returned ${resp.status}`);
-        setPushBusy(false);
+      try {
+        const resp = await fetch(serverUrl("/api/subscribe"), {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ subscription: sub }),
+        });
+        if (!resp.ok) {
+          pushToast("push-error", "Subscribe failed", `Server returned ${resp.status}`);
+          return;
+        }
+      } catch (err) {
+        console.error("send subscription failed", err);
+        pushToast("push-error", "Subscribe failed", String(err));
         return;
       }
 
@@ -279,6 +334,16 @@ export default function ReminderManager({ todos, enabled = true }: Props) {
   async function disablePushNotifications() {
     setPushBusy(true);
     try {
+      const win = window as unknown as { electronAPI?: ElectronAPI };
+      const isElectron = typeof window !== "undefined" && !!win.electronAPI;
+
+      if (isElectron) {
+        setPushEnabled(false);
+        pushToast("push-disabled", "Push disabled", "Desktop native notifications disabled in UI.");
+        setPushBusy(false);
+        return;
+      }
+
       const ready = await navigator.serviceWorker.ready;
       const sub = await ready.pushManager.getSubscription();
       const endpoint = getSubscriptionEndpoint(sub);
@@ -419,10 +484,22 @@ export default function ReminderManager({ todos, enabled = true }: Props) {
     }, delay);
     timers.current.set(key, timeoutId);
 
-    const endpoint = subEndpointRef.current;
-    if (endpoint) {
-      const todo = todos.find((t) => t.id === todoId);
+    const win = window as unknown as { electronAPI?: ElectronAPI };
+    if (win.electronAPI?.schedulesAdd) {
+      const todo = todos.find(t => t.id === todoId);
       if (todo) {
+        const payload: SchedulePayload = {
+          title: `Reminder: ${todo.text}`,
+          body: label + (todo.due ? ` • Due: ${formatLocal(todo.due)}` : ""),
+          todoId,
+        };
+        const schedule: ScheduleItem = { key, whenMs, payload };
+        void win.electronAPI.schedulesAdd(schedule).catch(e => console.debug("schedulesAdd failed", e));
+      }
+    } else {
+      const endpoint = subEndpointRef.current;
+      const todo = todos.find((t) => t.id === todoId);
+      if (endpoint && todo) {
         const payload = {
           title: `Reminder: ${todo.text}`,
           body: label + (todo.due ? ` • Due: ${formatLocal(todo.due)}` : ""),
@@ -474,6 +551,13 @@ export default function ReminderManager({ todos, enabled = true }: Props) {
         void sendCancelToServer(endpoint, `snooze::${todoId}`);
         void sendCancelToServer(endpoint, `${todoId}::`);
       }
+
+      const win = window as unknown as { electronAPI?: ElectronAPI };
+      if (win.electronAPI?.schedulesRemove) {
+        void win.electronAPI.schedulesRemove(`snooze::${todoId}`).catch(() => {});
+        void win.electronAPI.schedulesRemove(`${todoId}::`).catch(() => {});
+      }
+
       return;
     }
   }, [scheduleNotify, pushToast]
@@ -550,7 +634,6 @@ export default function ReminderManager({ todos, enabled = true }: Props) {
       };
       const schedules: ScheduleItem[] = [{ key: newKey, whenMs: newFire, payload }];
       void sendSchedulesToServer(endpoint, schedules);
-      subEndpointRef.current = endpoint;
     }
 
     setActiveReminders(a => a.filter(x => x.key !== rem.key));
@@ -595,6 +678,29 @@ export default function ReminderManager({ todos, enabled = true }: Props) {
           timers.current.delete(key);
         }, delay);
         timers.current.set(key, timerId);
+
+        const win = window as unknown as { electronAPI?: ElectronAPI };
+        if (win.electronAPI?.schedulesAdd) {
+          const payload: SchedulePayload = {
+            title: `Reminder: ${todo.text}`,
+            body: (m === 0 ? "Due now" : `Remind ${m} min before`) + (todo.due ? ` • Due: ${formatLocal(todo.due)}` : ""),
+            todoId: todo.id,
+          };
+          const schedule: ScheduleItem = { key, whenMs: fireAt, payload };
+          void win.electronAPI.schedulesAdd(schedule).catch(e => console.debug("schedulesAdd failed", e));
+        } else {
+          const endpoint = subEndpointRef.current;
+          if (endpoint) {
+            const payload = {
+              title: `Reminder: ${todo.text}`,
+              body: (m === 0 ? "Due now" : `Remind ${m} min before`) + (todo.due ? ` • Due: ${formatLocal(todo.due)}` : ""),
+              todoId: todo.id,
+              tags: `todo-reminder-${todo.id}`,
+            };
+            const schedules: ScheduleItem[] = [{ key, whenMs: fireAt, payload }];
+            void sendSchedulesToServer(endpoint, schedules);
+          }
+        }
       }
     }
 
@@ -607,6 +713,11 @@ export default function ReminderManager({ todos, enabled = true }: Props) {
 
           const endpoint = subEndpointRef.current;
           if (endpoint) void sendCancelToServer(endpoint, key);
+
+          const win = window as unknown as { electronAPI?: ElectronAPI };
+          if (win.electronAPI?.schedulesRemove) {
+            void win.electronAPI.schedulesRemove(key).catch(() => {});
+          }
         }
       }
     }
@@ -629,6 +740,11 @@ export default function ReminderManager({ todos, enabled = true }: Props) {
         timers.current.delete(key);
         const endpoint = subEndpointRef.current;
         if (endpoint) void sendCancelToServer(endpoint, key);
+
+        const win = window as unknown as { electronAPI?: ElectronAPI };
+        if (win.electronAPI?.schedulesRemove) {
+          void win.electronAPI.schedulesRemove(key).catch(() => {});
+        }
       }
     }
 
