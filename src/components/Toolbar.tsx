@@ -13,6 +13,7 @@ type Props = {
   markAll: (done: boolean) => void;
   todos: Todo[];
   setTodos: (t: Todo[]) => void;
+  showToast: (msg: string, ms?: number) => void;
 };
 
 export default function Toolbar({
@@ -26,23 +27,42 @@ export default function Toolbar({
   markAll,
   todos,
   setTodos: setTodos,
+  showToast,
 }: Props) {
   function onSortChange(e: ChangeEvent<HTMLSelectElement>) {
     setSortBy(e.target.value as "created" | "due" | "priority");
   }
 
   async function onSave() {
-    const res = await saveToDisk("todos.json", todos);
-    alert(res.ok ? "Saved to " + res.path : "Save failed: " + res.error);
+    try {
+      const res = await saveToDisk("todos.json", todos);
+      if (res.ok) {
+        showToast("Saved to " + res.path, 2000);
+      } else {
+        showToast("Save failed: " + res.error, 3000);
+      }
+    } catch (err) {
+      showToast("Save failed: " + String(err), 3000);
+      console.error("saveToDisk error", err);
+    } finally {
+      setTimeout(() => document.getElementById("todo-add-input")?.focus(), 50);
+    }
   }
 
   async function onLoad() {
-    const res = await readFromDisk("todos.json");
-    if (res.ok) {
-      setTodos(res.data as Todo[]);
-      alert("Loaded from: " + res.path);
-    } else {
-      alert("Load failed: " + res.error);
+    try {
+      const res = await readFromDisk("todos.json");
+      if (res.ok) {
+        setTodos(res.data as Todo[]);
+        showToast("Loaded from " + (res.path ?? "disk"), 2000);
+      } else {
+        showToast("Load failed: " + res.error, 3000);
+      }
+    } catch (err) {
+      showToast("Load failed: " + String(err), 3000);
+      console.error("readFromDisk error", err);
+    } finally {
+      setTimeout(() => document.getElementById("todo-add-input")?.focus(), 50);
     }
   }
 

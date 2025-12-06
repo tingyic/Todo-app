@@ -454,6 +454,7 @@ export default function App() {
           }}
           todos={todos}
           setTodos={setTodos}
+          showToast={showToast}
         />
 
         <main>
@@ -509,7 +510,7 @@ export default function App() {
               reindeer
             </a>
           </div>
-          <div> Version 2.0</div>
+          <div> Version 2.0.3</div>
         </footer>
       </div>
 
