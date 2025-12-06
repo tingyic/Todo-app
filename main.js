@@ -8,6 +8,9 @@ const __dirname = path.dirname(__filename);
 
 const isDev = !app.isPackaged;
 
+// single-instance app lock, to prevent multiple running processes
+const gotTheLock = app.requestSingleInstanceLock();
+
 let mainWindow = null;
 let tray = null;
 let isQuiting = false;
@@ -175,6 +178,40 @@ function createTray() {
 }
 
 app.commandLine.appendSwitch("disable-features", "AutofillServerCommunication");
+
+if (!gotTheLock) {
+  // If we couldn't get the lock, another instance is already running — exit this process.
+  console.info("Another instance is already running — quitting this one.");
+  app.quit();
+} else {
+  // Got the lock. Listen for subsequent launches and focus the existing window.
+  app.on("second-instance", (event, argv, workingDirectory) => {
+    // argv: command line arguments of the second instance (useful if you support deep links / file open)
+    try {
+      // If main window exists, restore / show / focus it.
+      const wins = BrowserWindow.getAllWindows();
+      if (wins.length > 0) {
+        const w = wins[0];
+        // if minimized, restore
+        if (w.isMinimized()) w.restore();
+        // show (in case it was hidden)
+        w.show();
+        // bring to front and focus
+        w.focus();
+      } else {
+        // no window present: create one
+        createWindow();
+      }
+    } catch (err) {
+      console.warn("second-instance handler failed:", err);
+    }
+  });
+
+  // On macOS, when the dock icon is clicked and no windows are open, create one.
+  app.on("activate", () => {
+    if (BrowserWindow.getAllWindows().length === 0) createWindow();
+  });
+}
 
 app.whenReady().then(async () => {
   try {
