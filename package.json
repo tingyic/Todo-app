@@ -18,7 +18,8 @@
             "dist/**/*",
             "main.js",
             "preload.js",
-            "package.json"
+            "package.json",
+            "assets/tray-icon.png"
         ],
         "directories": {
             "output": "release"

@@ -11,7 +11,7 @@ const isDev = !app.isPackaged;
 let mainWindow = null;
 let tray = null;
 let isQuiting = false;
-const DATA_SCHEDULES = path.join(app.getPath("userData"), "schedules.json");
+const fsPromises = fs.promises;
 const timers = new Map(); // key -> NodeJS.Timeout
 
 function createWindow() {
@@ -31,11 +31,42 @@ function createWindow() {
   } else {
     win.loadFile(path.join(__dirname, "dist", "index.html"));
   }
+
+  win.on("close", (e) => {
+    if (!isQuiting) {
+      e.preventDefault();
+      win.hide();
+    }
+  });
+
+  mainWindow = win;
+  return win;
+}
+
+function findTrayIconPaths() {
+  // order: project root (dev), dist root, packaged resources (app.getAppPath())
+  return [
+    path.join(__dirname, "tray-icon.png"),
+    path.join(process.cwd(), "tray-icon.png"),
+    path.join(__dirname, "assets", "tray-icon.png"),
+    path.join(app.getAppPath ? app.getAppPath() : __dirname, "tray-icon.png"),
+    path.join(app.getAppPath ? app.getAppPath() : __dirname, "assets", "tray-icon.png"),
+  ];
+}
+
+function schedulesFilePath() {
+  try {
+    return path.join(app.getPath("userData"), "schedules.json");
+  } catch {
+    // fallback to __dirname if app.getPath isn't available
+    return path.join(__dirname, "schedules.json");
+  }
 }
 
 async function loadPersistedSchedules() {
   try {
-    const raw = await fs.readFile(DATA_SCHEDULES, "utf8");
+    const file = schedulesFilePath();
+    const raw = await fsPromises.readFile(file, "utf8");
     return JSON.parse(raw);
   } catch {
     return [];
@@ -43,8 +74,9 @@ async function loadPersistedSchedules() {
 }
 async function savePersistedSchedules(schedules) {
   try {
-    await fs.mkdir(path.dirname(DATA_SCHEDULES), { recursive: true });
-    await fs.writeFile(DATA_SCHEDULES, JSON.stringify(schedules, null, 2), "utf8");
+    const file = schedulesFilePath();
+    await fsPromises.mkdir(path.dirname(file), { recursive: true });
+    await fsPromises.writeFile(file, JSON.stringify(schedules, null, 2), "utf8");
   } catch (err) {
     console.error("savePersistedSchedules failed:", err);
   }
@@ -66,48 +98,105 @@ function scheduleNotification(schedule) {
   const id = setTimeout(async () => {
     try {
       // show native notification
-      const n = new Notification({ title: payload.title, body: payload.body });
+      const n = new Notification({ title: payload.title ?? "Todo", body: payload.body ?? "" });
       n.show();
     } catch (e) {
       console.error("show notification failed", e);
     } finally {
       timers.delete(key);
       // remove one-shot schedule from persisted store
-      await removePersistedSchedule(key).catch(() => {});
+      try { await removePersistedSchedule(key); } catch {}
     }
   }, delay);
   timers.set(key, id);
 }
 
 async function rescheduleAll() {
-  const all = await loadPersistedSchedules();
-  for (const s of all) {
-    // if it's in the past, skip (or optionally trigger)
-    if (Number(s.whenMs) > Date.now()) scheduleNotification(s);
-    else await removePersistedSchedule(s.key).catch(() => {});
+  try {
+    const all = await loadPersistedSchedules();
+    for (const s of all) {
+      if (!s || !s.key || !s.whenMs) continue;
+      // if it's in the future, schedule it; otherwise remove it
+      if (Number(s.whenMs) > Date.now()) {
+        scheduleNotification(s);
+      } else {
+        await removePersistedSchedule(s.key).catch(() => {});
+      }
+    }
+    return all;
+  } catch (err) {
+    console.error("rescheduleAll failed", err);
+    return [];
   }
 }
 
 function createTray() {
   try {
-    const iconPath = path.join(__dirname, "tray-icon.png");
-    const icon = nativeImage.createFromPath(iconPath);
-    tray = new Tray(icon.isEmpty() ? undefined : icon);
-    tray.setToolTip("todo-app");
+    const candidates = findTrayIconPaths();
+    let iconPath = null;
+    for (const p of candidates) {
+      try {
+        if (p && fs.existsSync(p)) {
+          iconPath = p;
+          break;
+        }
+      } catch {
+        // ignore
+      }
+    }
+
+    if (!iconPath) {
+      console.info("createTray skipped: icon file not found in any candidate path", candidates);
+      return null;
+    }
+
+    const img = nativeImage.createFromPath(iconPath);
+    if (!img || img.isEmpty()) {
+      console.info("createTray skipped: nativeImage empty for", iconPath);
+      return null;
+    }
+
+    tray = new Tray(img);
+    tray.setToolTip("Todo App");
     tray.on("click", () => {
-      if (!mainWindow) return;
-      if (mainWindow.isVisible()) mainWindow.hide();
-      else mainWindow.show();
+      const wins = BrowserWindow.getAllWindows();
+      if (wins.length > 0) {
+        wins[0].show();
+        wins[0].focus();
+      }
     });
-  } catch (e) {
-    console.debug("createTray failed (no tray icon or platform issue):", e);
+
+    console.info("createTray: created tray with icon", iconPath);
+    return tray;
+  } catch (err) {
+    console.warn("createTray failed (platform / nativeImage issue):", err);
+    return null;
   }
 }
 
+app.commandLine.appendSwitch("disable-features", "AutofillServerCommunication");
+
 app.whenReady().then(async () => {
-  createWindow();
-  createTray();
-  await rescheduleAll();
+  try {
+    createWindow();
+  } catch (err) {
+    console.error("createWindow failed", err);
+  }
+
+  // create tray but do not allow it to throw
+  try {
+    createTray();
+  } catch (err) {
+    console.warn("Tray creation error (caught):", err);
+  }
+
+  // call rescheduleAll safely
+  try {
+    await rescheduleAll();
+    console.info("rescheduleAll completed.");
+  } catch (err) {
+    console.warn("rescheduleAll threw:", err);
+  }
 });
 
 app.on("before-quit", () => {
@@ -124,8 +213,8 @@ ipcMain.handle("get-user-data-path", async () => {
 ipcMain.handle("save-data", async (ev, name, json) => {
   try {
     const filePath = path.join(app.getPath("userData"), name);
-    await fs.mkdir(path.dirname(filePath), { recursive: true });
-    await fs.writeFile(filePath, JSON.stringify(json, null, 2), "utf8");
+    await fsPromises.mkdir(path.dirname(filePath), { recursive: true });
+    await fsPromises.writeFile(filePath, JSON.stringify(json, null, 2), "utf8");
     return { ok: true, path: filePath };
   } catch (err) {
     console.error("save-data failed", err);
@@ -136,7 +225,7 @@ ipcMain.handle("save-data", async (ev, name, json) => {
 ipcMain.handle("read-data", async (ev, name) => {
   try {
     const filePath = path.join(app.getPath("userData"), name);
-    const data = await fs.readFile(filePath, "utf8");
+    const data = await fsPromises.readFile(filePath, "utf8");
     return { ok: true, data: JSON.parse(data), path: filePath };
   } catch (err) {
     // not found or parse error

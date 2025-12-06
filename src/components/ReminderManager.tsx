@@ -49,6 +49,8 @@ type Toast = {
   when: string;
 }
 
+type ElectronSchedulesListResult = { ok: true; schedules: { key: string; whenMs: number; payload: unknown }[] } | { ok: false; error?: string };
+
 function idbOpen(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
     const req = indexedDB.open(DB_NAME, 1);
@@ -338,6 +340,16 @@ export default function ReminderManager({ todos, enabled = true }: Props) {
       const isElectron = typeof window !== "undefined" && !!win.electronAPI;
 
       if (isElectron) {
+        try {
+          const res = await win.electronAPI?.schedulesList?.();
+          if (res && res.ok && Array.isArray(res.schedules)) {
+            for (const s of res.schedules) {
+              await win.electronAPI?.schedulesRemove?.(s.key).catch(() => {});
+            }
+          }
+        } catch (e) {
+          console.debug("failed clearing schedules", e);
+        }
         setPushEnabled(false);
         pushToast("push-disabled", "Push disabled", "Desktop native notifications disabled in UI.");
         setPushBusy(false);
@@ -365,6 +377,37 @@ export default function ReminderManager({ todos, enabled = true }: Props) {
       setPushBusy(false);
     }
   }
+
+  useEffect(() => {
+    type ElectronAPI = {
+      schedulesList?: () => Promise<ElectronSchedulesListResult>;
+    };
+
+    const win = window as unknown as { electronAPI?: ElectronAPI };
+    const fn = win.electronAPI?.schedulesList;
+
+    if (typeof fn !== "function") return;
+
+    let mounted = true;
+    (async () => {
+      try {
+        const res = await fn();
+        if (!mounted) return;
+
+        if (res && res.ok && Array.isArray(res.schedules) && res.schedules.length > 0) {
+          setPushEnabled(true);
+        } else {
+          setPushEnabled(false);
+        }
+      } catch (err) {
+        console.debug("schedulesList failed", err);
+      }
+    })();
+
+    return () => {
+      mounted = false;
+    };
+  }, []);
 
   useEffect(() => {
     if (!enabled && pushEnabled) {
