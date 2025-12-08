@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, Notification, Tray, nativeImage } from "electron";
+﻿import { app, BrowserWindow, ipcMain, Notification, Tray, nativeImage } from "electron";
 import path from "node:path";
 import fs from "node:fs";
 import { fileURLToPath } from "node:url";
@@ -18,9 +18,24 @@ const fsPromises = fs.promises;
 const timers = new Map(); // key -> NodeJS.Timeout
 
 function createWindow() {
+    const iconPath = (() => {
+    const candidates = [
+      path.join(__dirname, "build", "tray-icon.ico"),
+      path.join(process.cwd(), "build", "tray-icon.ico"),
+      path.join(__dirname, "tray-icon.png"),
+      path.join(process.cwd(), "tray-icon.png"),
+    ];
+    for (const p of candidates) {
+      try { if (p && fs.existsSync(p)) return p; } catch {}
+    }
+    return undefined;
+  })();
+
   const win = new BrowserWindow({
     width: 1000,
     height: 800,
+    title: "todo or not todo?",
+    icon: iconPath,
     webPreferences: {
       preload: path.join(__dirname, "preload.js"),
       nodeIntegration: false,
@@ -49,11 +64,12 @@ function createWindow() {
 function findTrayIconPaths() {
   // order: project root (dev), dist root, packaged resources (app.getAppPath())
   return [
+    path.join(__dirname, "build", "tray-icon.ico"),
+    path.join(process.cwd(), "build", "tray-icon.ico"),
     path.join(__dirname, "tray-icon.png"),
     path.join(process.cwd(), "tray-icon.png"),
     path.join(__dirname, "assets", "tray-icon.png"),
     path.join(app.getAppPath ? app.getAppPath() : __dirname, "tray-icon.png"),
-    path.join(app.getAppPath ? app.getAppPath() : __dirname, "assets", "tray-icon.png"),
   ];
 }
 
@@ -160,7 +176,7 @@ function createTray() {
     }
 
     tray = new Tray(img);
-    tray.setToolTip("Todo App");
+    tray.setToolTip("todo or not todo?");
     tray.on("click", () => {
       const wins = BrowserWindow.getAllWindows();
       if (wins.length > 0) {

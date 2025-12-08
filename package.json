@@ -14,18 +14,36 @@
     },
     "build": {
         "appId": "com.todo.app",
+        "productName": "todo or not todo?",
+        "executableName": "todo-app",
         "files": [
             "dist/**/*",
             "main.js",
             "preload.js",
-            "package.json",
-            "assets/tray-icon.png"
+            "package.json"
         ],
         "directories": {
-            "output": "release"
+            "output": "release",
+            "buildResources": "build"
         },
         "win": {
-            "target": "nsis"
+            "icon": "build/tray-icon.ico",
+            "target": [
+            "nsis"
+            ],
+            "artifactName": "${productName}-${version}-Setup-${arch}.${ext}"
+        },
+        "nsis": {
+            "oneClick": false,
+            "perMachine": false,
+            "allowElevation": true,
+            "allowToChangeInstallationDirectory": true
+        },
+        "mac": {
+            "icon": "build/tray-icon.icns"
+        },
+        "linux": {
+            "icon": "build"
         }
     },
     "dependencies": {
