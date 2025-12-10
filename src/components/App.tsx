@@ -202,6 +202,19 @@ export default function App() {
     play("redo", true);
   }
 
+  // autosave (for desktop app)
+  useEffect(() => {
+    const onBeforeUnload = () => {
+      try {
+        window.__APP_AUTOSAVE_HANDLE?.syncFlush();
+      } catch (e) {
+        console.error("Final autosave flush failed:", e);
+      }
+    };
+    window.addEventListener("beforeunload", onBeforeUnload);
+    return () => window.removeEventListener("beforeunload", onBeforeUnload);
+  }, []);
+
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
       const target = e.target as HTMLElement | null;
@@ -454,6 +467,7 @@ export default function App() {
           }}
           todos={todos}
           setTodos={setTodos}
+          showToast={showToast}
         />
 
         <main>
@@ -509,7 +523,7 @@ export default function App() {
               reindeer
             </a>
           </div>
-          <div> Version 2.0</div>
+          <div> Version 2.0.5</div>
         </footer>
       </div>
 

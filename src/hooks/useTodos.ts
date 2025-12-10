@@ -1,3 +1,4 @@
+import { createAutoSave } from "../utils/autosave";
 import { useEffect, useReducer, useRef, useState } from "react";
 import type { Todo, Recurrence } from "../types";
 import { parseLocalDateTime } from "../utils/dates";
@@ -95,6 +96,31 @@ type AddPayload = {
 export function useTodos() {
   const [state, dispatch] = useReducer(reducer, { todos: [] as Todo[] });
   const [autoCreateNext, setAutoCreateNext] = useState<boolean>(true);
+
+  // autosave (for desktop app)
+  const todosRef = useRef<Todo[]>([]);
+  useEffect(() => {
+    todosRef.current = state.todos;
+  }, [state.todos]);
+
+  const autosaveRef = useRef<ReturnType<typeof import("../utils/autosave").createAutoSave<Todo[]>> | null>(null);
+    if (!autosaveRef.current) {
+      autosaveRef.current = createAutoSave<Todo[]>({
+        fileName: "todos.json",
+        getState: () => todosRef.current,
+        debounceMs: 700,
+      });
+
+      if (typeof window !== "undefined") {
+        (window as Window & { __APP_AUTOSAVE_HANDLE?: AutoSaveHandle }).__APP_AUTOSAVE_HANDLE = 
+          autosaveRef.current as unknown as AutoSaveHandle;
+      }
+    }
+
+  // notify autosave every time todos change
+  useEffect(() => {
+    autosaveRef.current?.notifyChange();
+  }, [state.todos]);
 
   // undo/redo history
   const pastRef = useRef<Todo[][]>([]); // undo history (older snapshots)

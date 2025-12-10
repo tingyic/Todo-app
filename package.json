@@ -1,7 +1,7 @@
 {
     "name": "todo-app",
     "private": true,
-    "version": "2.0.0",
+    "version": "2.0.5",
     "type": "module",
     "main": "main.js",
     "scripts": {
@@ -14,6 +14,8 @@
     },
     "build": {
         "appId": "com.todo.app",
+        "productName": "todo or not todo?",
+        "executableName": "todo-app",
         "files": [
             "dist/**/*",
             "main.js",
@@ -21,10 +23,27 @@
             "package.json"
         ],
         "directories": {
-            "output": "release"
+            "output": "release",
+            "buildResources": "build"
         },
         "win": {
-            "target": "nsis"
+            "icon": "build/tray-icon.ico",
+            "target": [
+            "nsis"
+            ],
+            "artifactName": "${productName}-${version}-Setup-${arch}.${ext}"
+        },
+        "nsis": {
+            "oneClick": false,
+            "perMachine": false,
+            "allowElevation": true,
+            "allowToChangeInstallationDirectory": true
+        },
+        "mac": {
+            "icon": "build/tray-icon.icns"
+        },
+        "linux": {
+            "icon": "build"
         }
     },
     "dependencies": {
