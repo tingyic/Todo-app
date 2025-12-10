@@ -9,4 +9,6 @@ contextBridge.exposeInMainWorld("electronAPI", {
   schedulesRemove: (key) => ipcRenderer.invoke("schedules-remove", key),
   schedulesList: () => ipcRenderer.invoke("schedules-list"),
   showNotification: (payload) => ipcRenderer.invoke("show-notification", payload),
+  saveDataSync: (name, json) => ipcRenderer.sendSync("save-data-sync", name, json),
+  sendSync: (channel, ...args) => ipcRenderer.sendSync(channel, ...args)
 });

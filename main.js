@@ -17,6 +17,9 @@ let isQuiting = false;
 const fsPromises = fs.promises;
 const timers = new Map(); // key -> NodeJS.Timeout
 
+app.setAppUserModelId("com.todo.app");
+app.name = "todo or not todo?"; 
+
 function createWindow() {
     const iconPath = (() => {
     const candidates = [
@@ -62,8 +65,11 @@ function createWindow() {
 }
 
 function findTrayIconPaths() {
-  // order: project root (dev), dist root, packaged resources (app.getAppPath())
+  // order: packaged resources, build folder, project root / dev
+  const packagedBase = process.resourcesPath || __dirname;
   return [
+    path.join(packagedBase, "build", "tray-icon.ico"),
+    path.join(packagedBase, "tray-icon.ico"),
     path.join(__dirname, "build", "tray-icon.ico"),
     path.join(process.cwd(), "build", "tray-icon.ico"),
     path.join(__dirname, "tray-icon.png"),
@@ -72,6 +78,7 @@ function findTrayIconPaths() {
     path.join(app.getAppPath ? app.getAppPath() : __dirname, "tray-icon.png"),
   ];
 }
+
 
 function schedulesFilePath() {
   try {
@@ -272,6 +279,20 @@ ipcMain.handle("save-data", async (ev, name, json) => {
   } catch (err) {
     console.error("save-data failed", err);
     return { ok: false, error: String(err) };
+  }
+});
+
+ipcMain.on("save-data-sync", (event, name, json) => {
+  try {
+    const filePath = path.join(app.getPath("userData"), name);
+    // ensure directory exists synchronously
+    try { fs.mkdirSync(path.dirname(filePath), { recursive: true }); } catch (e) {}
+    fs.writeFileSync(filePath, JSON.stringify(json, null, 2), "utf8");
+    // synchronous return value for ipcRenderer.sendSync
+    event.returnValue = { ok: true, path: filePath };
+  } catch (err) {
+    console.error("save-data-sync failed", err);
+    event.returnValue = { ok: false, error: String(err) };
   }
 });
 
