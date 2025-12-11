@@ -1068,3 +1068,77 @@ kbd.help-kbd, .help-kbd kbd {
   .snooze-actions { gap: 6px; }
   .snooze-btn { padding: 6px 8px; font-size: 12px; }
 }
+
+/* Annual calendar styles */
+.annual-calendar .months-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
+}
+
+.month-card {
+  border: 1px solid var(--app-border);
+  border-radius: 10px;
+  padding: 10px;
+  box-sizing: border-box;
+  min-height: 160px;
+}
+
+.day-cell {
+  background: transparent;
+  border: 1px solid transparent;
+  padding: 6px;
+  border-radius: 6px;
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: background 160ms ease, transform 120ms ease;
+  color: var(--app-text);
+}
+
+.day-cell.empty {
+  background: transparent;
+  cursor: default;
+}
+
+.day-cell:hover { transform: translateY(-4px); box-shadow: 0 8px 20px rgba(2,6,23,0.06); }
+
+.day-cell.has-todos {
+  background: linear-gradient(180deg, rgba(99,102,241,0.04), rgba(99,102,241,0.02));
+  border: 1px solid rgba(99,102,241,0.08);
+}
+
+.day-cell.is-today { outline: 2px solid rgba(99,102,241,0.12); }
+
+.day-dots { display:flex; gap:6px; align-items:center; justify-content:center; }
+
+.day-dots .dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: var(--prio-medium); /* generic color — small dots */
+  box-shadow: 0 2px 6px rgba(2,6,23,0.06);
+}
+
+/* Popup day panel */
+.calendar-day-popup {
+  position: fixed;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  background: rgba(2,6,23,0.28);
+  z-index: 100050;
+}
+
+.calendar-day-panel {
+  width: min(720px, calc(100% - 40px));
+  max-height: 80vh;
+  overflow: auto;
+  background: var(--app-card);
+  border: 1px solid var(--app-border);
+  border-radius: 12px;
+  padding: 14px;
+  box-shadow: 0 20px 50px rgba(2,6,23,0.18);
+}

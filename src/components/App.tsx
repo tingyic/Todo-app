@@ -1,6 +1,7 @@
 import { haptic, play, isSoundEnabled, setSoundEnabled } from "../utils/sound";
 import { useMemo, useState, useEffect, useRef, useCallback } from "react";
 import { useTodos } from "../hooks/useTodos";
+import AnnualCalendar from "./AnnualCalendar";
 import CelebrateOverlay from "./CelebrationOverlay";
 import HelpButton from "./HelpButton";
 import ReminderManager from "./ReminderManager";
@@ -327,6 +328,8 @@ export default function App() {
     return () => window.removeEventListener("keydown", onKey);
   }, [undo, redo, canUndo, canRedo, toggleTheme, toggleReminders, toggleSound, setFilterWithFeedback, showToast, visible, selectedId]);
 
+  const [view, setView] = useState<"list" | "year">("list");
+
   return (
     <div className="min-h-screen bg-app-root flex items-start justify-center py-12 px-4">
       <div className="w-full max-w-3xl bg-app-card rounded-2xl shadow-lg p-6">
@@ -468,41 +471,55 @@ export default function App() {
           todos={todos}
           setTodos={setTodos}
           showToast={showToast}
+          view={view}
+          setView={setView}
         />
 
         <main>
-          <TodoList
-            todos={visible}
-            dustingIds={dustingIds}
-            selectedId={selectedId}
-            setSelectedId={setSelectedId}
-            showToast={showToast}
-            onToggle={(id: string, createNext?: boolean | null) => {
-              const t = todos.find(x => x.id === id);
-              const wasDone = !!t?.done;
-              toggle(id, createNext);
-              
-              if (!wasDone) {
-                play("celebrate", true);
-                haptic([50, 30, 50]);
-                showToast("Yayyyyy lesgoooo task completed weeeee 🎉", 1400);
-              } else {
+          {view === "list" ? (
+            <TodoList
+              todos={visible}
+              dustingIds={dustingIds}
+              selectedId={selectedId}
+              setSelectedId={setSelectedId}
+              showToast={showToast}
+              onToggle={(id: string, createNext?: boolean | null) => {
+                const t = todos.find(x => x.id === id);
+                const wasDone = !!t?.done;
+                toggle(id, createNext);
+                
+                if (!wasDone) {
+                  play("celebrate", true);
+                  haptic([50, 30, 50]);
+                  showToast("Yayyyyy lesgoooo task completed weeeee 🎉", 1400);
+                } else {
+                  play("click", false);
+                  showToast("Marked as not done", 900)
+                }
+              }}
+              onRemove={id => {
+                setSelectedId(prev => (prev === id ? null : prev));
+                remove(id);
+                play("delete", true);
+                showToast("Deleted", 900);
+              }}
+              onUpdate={(id, patch, toastMsg) => {
+                update(id, patch);
                 play("click", false);
-                showToast("Marked as not done", 900)
-              }
-            }}
-            onRemove={id => {
-              setSelectedId(prev => (prev === id ? null : prev));
-              remove(id);
-              play("delete", true);
-              showToast("Deleted", 900);
-            }}
-            onUpdate={(id, patch, toastMsg) => {
-              update(id, patch);
-              play("click", false);
-              showToast(toastMsg ?? "Saved", 800);
-            }}
-          />
+                showToast(toastMsg ?? "Saved", 800);
+              }}
+            />
+            ) : (
+              <AnnualCalendar
+                year={new Date().getFullYear()}
+                todos={todos}
+                onOpenTask={(id) => {
+                  setView("list");
+                  setSelectedId(id);
+                  showToast("Opened task in list", 800);
+                }}
+              />
+            )}
         </main>
 
         <footer className="mt-6 flex items-center justify-between text-sm text-app-muted">
@@ -523,7 +540,7 @@ export default function App() {
               reindeer
             </a>
           </div>
-          <div> Version 2.0.5</div>
+          <div> Version 2.1</div>
         </footer>
       </div>
 
