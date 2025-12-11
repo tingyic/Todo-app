@@ -630,7 +630,7 @@ export default function TodoItem({ index, todo, onToggle, onRemove, onUpdate, is
       originalDoneRef.current = !!todo.done;
       setConfirmOpen(true);
 
-      if ((todo.subtasks ?? []. length)) {
+      if (((todo.subtasks ?? []).length)) {
         const allDoneSubs = (todo.subtasks ?? []).map(s => ({ ...s, done: true }));
         onUpdate(todo.id, { subtasks: allDoneSubs }, "Subtasks marked done");
       }

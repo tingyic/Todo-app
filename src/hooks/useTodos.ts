@@ -1,4 +1,5 @@
 import { createAutoSave } from "../utils/autosave";
+import type { AutoSaveHandle } from "../utils/autosave";
 import { useEffect, useReducer, useRef, useState } from "react";
 import type { Todo, Recurrence } from "../types";
 import { parseLocalDateTime } from "../utils/dates";
@@ -104,6 +105,8 @@ export function useTodos() {
   }, [state.todos]);
 
   const autosaveRef = useRef<ReturnType<typeof import("../utils/autosave").createAutoSave<Todo[]>> | null>(null);
+
+  useEffect(() => {
     if (!autosaveRef.current) {
       autosaveRef.current = createAutoSave<Todo[]>({
         fileName: "todos.json",
@@ -112,10 +115,11 @@ export function useTodos() {
       });
 
       if (typeof window !== "undefined") {
-        (window as Window & { __APP_AUTOSAVE_HANDLE?: AutoSaveHandle }).__APP_AUTOSAVE_HANDLE = 
+        (window as Window & { __APP_AUTOSAVE_HANDLE?: AutoSaveHandle }).__APP_AUTOSAVE_HANDLE =
           autosaveRef.current as unknown as AutoSaveHandle;
       }
     }
+  }, []);
 
   // notify autosave every time todos change
   useEffect(() => {

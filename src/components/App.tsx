@@ -101,7 +101,7 @@ export default function App() {
   const [celebrate, setCelebrate] = useState(false);
 
   // Thanos snap effect for clear completed tasks
-  const [dustingIds, setDustingIds] = useState<Set<string>>(new(Set));
+  const [dustingIds, setDustingIds] = useState<Set<string>>(() => new Set<string>());
   const DUST_DURATION = 900;
 
   // small toast for feedback (undo/redo)
@@ -506,7 +506,7 @@ export default function App() {
         </main>
 
         <footer className="mt-6 flex items-center justify-between text-sm text-app-muted">
-          <div>{stats.total} {stats.total == 1 ? "item" : "items"}</div>
+          <div>{stats.total} {stats.total === 1 ? "item" : "items"}</div>
           <div> Have a nice day :)</div>
           <div>
             Made by{" "}

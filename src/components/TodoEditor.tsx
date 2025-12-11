@@ -99,6 +99,7 @@ export default function TodoEditor({ onAdd }: Props) {
   return (
     <form onSubmit={submit} style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 12, flexWrap: "wrap" }}>
       <input
+        id="todo-add-input"
         value={text}
         onChange={(e) => setText(e.target.value)}
         placeholder="Let's get this bread (Enter to add)"

@@ -9,6 +9,10 @@ require("dotenv").config(); // optional for local dev
 const VAPID_PUBLIC = (functions.config && functions.config().push && functions.config().push.vapid_public) || process.env.VAPID_PUBLIC;
 const VAPID_PRIVATE = (functions.config && functions.config().push && functions.config().push.vapid_private) || process.env.VAPID_PRIVATE;
 
+const MAX_TIMEOUT = 2_147_483_000;
+const subscriptions = new Map();
+const scheduledJobs = new Map();
+
 if (VAPID_PUBLIC && VAPID_PRIVATE) {
   webpush.setVapidDetails("mailto:you@example.com", VAPID_PUBLIC, VAPID_PRIVATE);
 } else {

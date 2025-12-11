@@ -22,6 +22,7 @@ const subscriptions = new Map();
 app.get("/", (req, res) => res.send("todo-push server ok"));
 
 app.get("/config/push-public-key", (req, res) => {
+  res.setHeader('Cache-Control', 'public, max-age=86400, s-maxage=86400'); // cache 24h
   res.json({ publicKey: VAPID_PUBLIC });
 });
 

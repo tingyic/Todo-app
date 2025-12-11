@@ -3,7 +3,7 @@ import TodoItem from "./TodoItem";
 
 type Props = {
   todos: Todo[];
-  onToggle: (id: string) => void;
+  onToggle: (id: string, createNext?: boolean | null) => void;
   onRemove: (id: string) => void;
   onUpdate: (id: string, patch: Partial<Todo>, toastMsg?: string) => void;
   dustingIds?: Set<string>;
