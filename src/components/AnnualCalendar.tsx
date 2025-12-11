@@ -24,6 +24,61 @@ function daysInMonth(year: number, m0: number) {
   return new Date(year, m0 + 1, 0).getDate();
 }
 
+function buildIndicatorsForList(list: Todo[]) {
+  if (!list || list.length === 0) return [] as ("high" | "medium" | "low" | "completed")[];
+
+  // separate completed from active
+  const completedCount = list.filter((t) => t.done).length;
+  const active = list.filter((t) => !t.done);
+
+  const highs = active.filter((t) => t.priority === "high").length;
+  const meds = active.filter((t) => t.priority === "medium").length;
+  const lows = active.filter((t) => t.priority === "low").length;
+  const completes = completedCount;
+
+  const totalActive = highs + meds + lows;
+  const total = totalActive + completes;
+  const slotsTotal = 3;
+
+  // if total <= 3, produce simple list preserving higher-priority first, then completed last
+  if (total <= 3) {
+    const res: ("high" | "medium" | "low" | "completed")[] = [];
+    for (let i = 0; i < highs; i++) res.push("high");
+    for (let i = 0; i < meds; i++) res.push("medium");
+    for (let i = 0; i < lows; i++) res.push("low");
+    for (let i = 0; i < completes; i++) res.push("completed");
+    return res;
+  }
+
+  // for >3 tasks, allocate slots in priority order: high -> medium -> low -> completed
+  const result: ("high" | "medium" | "low" | "completed")[] = [];
+  let slots = slotsTotal;
+
+  const take = (count: number, type: "high" | "medium" | "low" | "completed") => {
+    const n = Math.min(count, slots);
+    for (let i = 0; i < n; i++) {
+      result.push(type);
+    }
+    slots -= n;
+  };
+
+  take(highs, "high");
+  if (slots > 0) take(meds, "medium");
+  if (slots > 0) take(lows, "low");
+  if (slots > 0) take(completes, "completed");
+
+  // If we still have slots (edge cases), fill from remaining active in priority order
+  if (slots > 0) {
+    if (highs > result.filter(r => r === "high").length) take(highs - result.filter(r => r === "high").length, "high");
+    if (slots > 0 && meds > result.filter(r => r === "medium").length) take(meds - result.filter(r => r === "medium").length, "medium");
+    if (slots > 0 && lows > result.filter(r => r === "low").length) take(lows - result.filter(r => r === "low").length, "low");
+    if (slots > 0 && completes > result.filter(r => r === "completed").length) take(completes - result.filter(r => r === "completed").length, "completed");
+  }
+
+  // ensure length <= slotsTotal
+  return result.slice(0, slotsTotal);
+}
+
 export default function AnnualCalendar({ year, todos, onOpenTask }: Props) {
   const now = new Date();
   const Y = year ?? now.getFullYear();
@@ -86,6 +141,7 @@ export default function AnnualCalendar({ year, todos, onOpenTask }: Props) {
                   const list = byDate.get(key) ?? [];
                   const isToday = key === dateKeyFromDate(new Date());
                   const cls = `day-cell ${list.length ? "has-todos" : ""} ${isToday ? "is-today" : ""}`;
+                  const indicators = buildIndicatorsForList(list);
                   return (
                     <button
                       key={idx}
@@ -97,11 +153,21 @@ export default function AnnualCalendar({ year, todos, onOpenTask }: Props) {
                     >
                       <div style={{ display: "flex", flexDirection: "column", alignItems: "center" }}>
                         <div style={{ fontSize: 12 }}>{v}</div>
-                        {list.length > 0 && (
+                        {indicators.length > 0 && (
                           <div className="day-dots" aria-hidden style={{ display: "flex", gap: 4, marginTop: 6 }}>
-                            {/* show up to 3 dots, color based on priority mix */}
-                            {list.slice(0, 3).map((t, i) => (
-                              <span key={t.id + i} className="dot" aria-hidden title={t.text} />
+                            {indicators.map((p, i) => (
+                              <span
+                                key={`${key}-dot-${i}`}
+                                className={`dot prio-${p}`}
+                                aria-hidden
+                                title={p}
+                                style={{ 
+                                    width: 8,
+                                    height: 8,
+                                    borderRadius: 999,
+                                    display: "inline-block",
+                                }}
+                            />
                             ))}
                           </div>
                         )}
@@ -129,8 +195,13 @@ export default function AnnualCalendar({ year, todos, onOpenTask }: Props) {
                 <div style={{ color: "var(--app-muted)" }}>No tasks for this day</div>
               ) : (
                 (byDate.get(selectedDay.key) ?? []).map(t => (
-                  <div key={t.id} className="snooze-card" style={{ marginTop: 8, padding: 8, cursor: "pointer" }} onClick={() => { onOpenTask?.(t.id); }}>
-                    <div style={{ fontWeight: 700 }}>{t.text}</div>
+                  <div 
+                    key={t.id} 
+                    className={`snooze-card ${t.done ? "task-completed" : ""}`} 
+                    style={{ marginTop: 8, padding: 8, cursor: "pointer" }} 
+                    onClick={() => { onOpenTask?.(t.id); closeDay() }}
+                  >
+                    <div style={{ fontWeight: 700 }} className={t.done ? "prio-completed" : `prio-${t.priority}`}>{t.text}</div>
                     <div style={{ color: "var(--app-muted)", fontSize: 12, marginTop: 6 }}>
                       {t.due ? formatLocalDateTime(t.due) : new Date(t.createdAt).toLocaleString()}
                     </div>
