@@ -1160,3 +1160,78 @@ kbd.help-kbd, .help-kbd kbd {
 .calendar-day-panel .prio-completed {
   font-weight: 700;
 }
+
+/* Year picker toggle */
+.year-picker-toggle {
+  background: transparent;
+  border: 1px solid transparent;
+  padding: 4px 8px;
+  border-radius: 8px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.year-picker-toggle:hover { border-color: var(--app-border); }
+
+/* prev/next arrows */
+.year-arrow {
+  border: 1px solid transparent;
+  background: var(--app-card);
+  padding: 6px 8px;
+  border-radius: 8px;
+  cursor: pointer;
+}
+.year-arrow:hover { border-color: var(--app-border); }
+
+/* picker panel */
+.year-picker {
+  position: absolute;
+  z-index: 120000;
+  margin-top: 8px;
+  background: var(--app-card);
+  border: 1px solid var(--app-border);
+  box-shadow: 0 8px 30px rgba(2, 6, 23, 0.08);
+  border-radius: 10px;
+  overflow: hidden;
+  min-width: 320px;
+}
+
+/* input & small controls */
+.year-picker .year-picker-input {
+  width: 88px;
+  padding: 6px 8px;
+  border-radius: 8px;
+  border: 1px solid var(--app-border);
+  background: transparent;
+  color: var(--app-text);
+  font-weight: 700;
+}
+
+/* year options quick list */
+.year-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 10px;
+  max-height: 220px;
+  overflow: auto;
+}
+.year-option {
+  padding: 6px 10px;
+  border-radius: 8px;
+  background: transparent;
+  border: 1px solid transparent;
+  cursor: pointer;
+}
+.year-option.active {
+  background: var(--app-btn);
+  color: var(--app-btn-text, var(--app-text));
+  border-color: var(--app-btn);
+  font-weight: 700;
+}
+.year-option:hover { border-color: var(--app-border); }
+
+/* make sure the picker is placed relative to header */
+.annual-header { position: relative; }
+
+/* minor layout niceties */
+.year-picker .btn-plain { padding: 6px 8px; border-radius: 8px; }

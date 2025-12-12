@@ -1,7 +1,7 @@
 import { haptic, play, isSoundEnabled, setSoundEnabled } from "../utils/sound";
 import { useMemo, useState, useEffect, useRef, useCallback } from "react";
 import { useTodos } from "../hooks/useTodos";
-import AnnualCalendar from "./AnnualCalendar";
+import AnnualCalendar, { type ImperativeCalendarHandle } from "./AnnualCalendar";
 import CelebrateOverlay from "./CelebrationOverlay";
 import HelpButton from "./HelpButton";
 import ReminderManager from "./ReminderManager";
@@ -25,7 +25,11 @@ export default function App() {
     canRedo,
   } = useTodos();
 
+  const calRef = useRef<ImperativeCalendarHandle | null>(null);
+
   const [selectedId, setSelectedId] = useState<string | null>(null);
+
+  const [view, setView] = useState<"list" | "year">("list");
   
   const [filter, setFilter] = useState<"all" | "active" | "completed">("all");
   const [query, setQuery] = useState("");
@@ -128,6 +132,13 @@ export default function App() {
       } catch {/* Empty */}
     }, ms);
   }, []);
+
+  const setViewWithFeedback = useCallback((v:  "list" | "year") => {
+    setView(v);
+    play("click", false);
+    try {haptic(25);} catch {/* empty */}
+    showToast(v === "year" ? "Year view" : "List view", 700);
+  }, [showToast])
 
   useEffect(() => {
     if (toast) {
@@ -245,6 +256,17 @@ export default function App() {
         }
       }
 
+      if (key === "arrowleft" && view === "year") {
+        e.preventDefault();
+        calRef.current?.prev?.();
+        return;
+      }
+      if (key === "arrowright" && view === "year") {
+        e.preventDefault();
+        calRef.current?.next?.();
+        return;
+      }
+
       switch (key) {
         case "t": {
           // Theme toggle (T for theme)
@@ -326,9 +348,7 @@ export default function App() {
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [undo, redo, canUndo, canRedo, toggleTheme, toggleReminders, toggleSound, setFilterWithFeedback, showToast, visible, selectedId]);
-
-  const [view, setView] = useState<"list" | "year">("list");
+  }, [undo, redo, canUndo, canRedo, toggleTheme, toggleReminders, toggleSound, setFilterWithFeedback, showToast, visible, selectedId, view]);
 
   return (
     <div className="min-h-screen bg-app-root flex items-start justify-center py-12 px-4">
@@ -447,7 +467,7 @@ export default function App() {
             // after dust animation finishes, actually clear them
             window.setTimeout(() => {
               // clear the backups / actual removal
-              clearCompleted(); // call your hook to remove completed items from state
+              clearCompleted();
               // cleanup animation flags
               setDustingIds(new Set());
               // final success hint
@@ -472,7 +492,7 @@ export default function App() {
           setTodos={setTodos}
           showToast={showToast}
           view={view}
-          setView={setView}
+          setView={setViewWithFeedback}
         />
 
         <main>
@@ -511,10 +531,10 @@ export default function App() {
             />
             ) : (
               <AnnualCalendar
-                year={new Date().getFullYear()}
+                ref={calRef}
                 todos={todos}
                 onOpenTask={(id) => {
-                  setView("list");
+                  setViewWithFeedback("list");
                   setSelectedId(id);
                   showToast("Opened task in list", 800);
                 }}
@@ -540,7 +560,7 @@ export default function App() {
               reindeer
             </a>
           </div>
-          <div> Version 2.1.1</div>
+          <div> Version 2.1.2</div>
         </footer>
       </div>
 
