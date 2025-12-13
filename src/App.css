@@ -1154,13 +1154,6 @@ kbd.help-kbd, .help-kbd kbd {
   box-shadow: 0 20px 50px rgba(2, 6, 23, 0.18);
 }
 
-.calendar-day-panel .prio-high,
-.calendar-day-panel .prio-medium,
-.calendar-day-panel .prio-low,
-.calendar-day-panel .prio-completed {
-  font-weight: 700;
-}
-
 /* Year picker toggle */
 .year-picker-toggle {
   background: transparent;
@@ -1233,5 +1226,53 @@ kbd.help-kbd, .help-kbd kbd {
 /* make sure the picker is placed relative to header */
 .annual-header { position: relative; }
 
-/* minor layout niceties */
 .year-picker .btn-plain { padding: 6px 8px; border-radius: 8px; }
+
+/* highlight 'today' with inverted/negative colours */
+.day-cell.is-today {
+  background: var(--app-text);
+  color: var(--app-card);
+  box-shadow: 0 6px 18px rgba(2, 6, 23, 0.12);
+}
+
+.day-cell.is-today .day-number {
+  color: inherit;
+  font-weight: 600;
+}
+
+.day-cell.is-today .dot {
+  background: var(--app-card);
+  opacity: 1;
+  box-shadow: none;
+}
+
+.theme-dark .day-cell.is-today {
+  background: var(--app-card);
+  color: var(--app-text);
+  box-shadow: 0 6px 18px rgba(2, 6, 23, 0.18);
+}
+
+.theme-dark .day-cell.is-today .day-number {
+  color: inherit;
+}
+
+.annual-calendar .day-cell.is-today {
+  background: var(--app-text);
+  color: var(--app-card);
+  box-shadow: 0 6px 18px rgba(2, 6, 23, 0.12);
+  transition: background 160ms ease, color 160ms ease;
+}
+
+.annual-calendar .day-cell.is-today .day-number {
+  color: inherit;
+  font-weight: 600;
+}
+
+.theme-dark .annual-calendar .day-cell.is-today {
+  box-shadow: 0 8px 22px rgba(2, 6, 23, 0.20);
+}
+
+.day-cell.is-today .dot.prio-high { background: var(--prio-high); }
+.day-cell.is-today .dot.prio-medium { background: var(--prio-medium); }
+.day-cell.is-today .dot.prio-low { background: var(--prio-low); }
+.day-cell.is-today .dot.prio-completed { background: var(--prio-completed); }

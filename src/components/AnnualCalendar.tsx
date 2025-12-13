@@ -1,4 +1,4 @@
-import { forwardRef, useEffect, useMemo, useRef, useImperativeHandle, useState } from "react";
+import { forwardRef, useEffect, useMemo, useRef, useImperativeHandle, useState, useCallback } from "react";
 import type { Todo } from "../types";
 import { parseLocalDateTime, formatLocalDateTime } from "../utils/dates";
 import { play, haptic } from "../utils/sound";
@@ -144,6 +144,44 @@ const AnnualCalendar = forwardRef<ImperativeCalendarHandle, Props>(({ year, todo
   }, [todos]);
 
   const [selectedDay, setSelectedDay] = useState<{ key: string; date: Date } | null>(null);
+
+  const changeSelectedDayBy = useCallback((delta: number) => {
+    if (!selectedDay) return;
+    const d = new Date(selectedDay.date);
+    d.setDate(d.getDate() + delta);
+
+    const y = d.getFullYear();
+    if (y < LOWER_YEAR || y > UPPER_YEAR) {
+      play("error", false);
+      return;
+    }
+
+    const newKey = dateKeyFromDate(d);
+    setSelectedDay({ key: newKey, date: d });
+    play("click", false);
+    haptic(20);
+  }, [selectedDay, LOWER_YEAR, UPPER_YEAR]);
+
+// while the details popup is open: left/right should move within popup
+useEffect(() => {
+  if (!selectedDay) return;
+
+  function onPopupKey(e: KeyboardEvent) {
+    const k = e.key.toLowerCase();
+    if (k === "arrowleft") {
+      e.preventDefault();
+      e.stopPropagation();
+      changeSelectedDayBy(-1);
+    } else if (k === "arrowright") {
+      e.preventDefault();
+      e.stopPropagation();
+      changeSelectedDayBy(1);
+    }
+  }
+
+  window.addEventListener("keydown", onPopupKey);
+  return () => window.removeEventListener("keydown", onPopupKey);
+}, [selectedDay, changeSelectedDayBy]);
 
   const openDay = (key: string, date: Date) => {
     play("click", false);
@@ -360,7 +398,7 @@ const AnnualCalendar = forwardRef<ImperativeCalendarHandle, Props>(({ year, todo
                       aria-pressed={selectedDay?.key === key}
                     >
                       <div style={{ display: "flex", flexDirection: "column", alignItems: "center" }}>
-                        <div style={{ fontSize: 12 }}>{v}</div>
+                        <div className="day-number" style={{ fontSize: 12 }}>{v}</div>
                         {indicators.length > 0 && (
                           <div className="day-dots" aria-hidden style={{ display: "flex", gap: 4, marginTop: 6 }}>
                             {indicators.map((p, i) => (

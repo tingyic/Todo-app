@@ -256,15 +256,15 @@ export default function App() {
         }
       }
 
-      if (key === "arrowleft" && view === "year") {
-        e.preventDefault();
-        calRef.current?.prev?.();
-        return;
-      }
-      if (key === "arrowright" && view === "year") {
-        e.preventDefault();
-        calRef.current?.next?.();
-        return;
+      if ((key === "arrowleft" || key === "arrowright") && view === "year") {
+        if (document.querySelector(".calendar-day-panel")) {
+          // do nothing
+        } else {
+          e.preventDefault();
+          if (key === "arrowleft") calRef.current?.prev?.();
+          else calRef.current?.next?.();
+          return;
+        }
       }
 
       switch (key) {
@@ -560,7 +560,7 @@ export default function App() {
               reindeer
             </a>
           </div>
-          <div> Version 2.1.2</div>
+          <div> Version 2.1.3</div>
         </footer>
       </div>
 
