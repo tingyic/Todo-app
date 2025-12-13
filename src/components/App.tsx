@@ -1,5 +1,5 @@
 import { haptic, play, isSoundEnabled, setSoundEnabled } from "../utils/sound";
-import { useMemo, useState, useEffect, useRef, useCallback } from "react";
+import React, { useMemo, useState, useEffect, useRef, useCallback } from "react";
 import { useTodos } from "../hooks/useTodos";
 import AnnualCalendar, { type ImperativeCalendarHandle } from "./AnnualCalendar";
 import CelebrateOverlay from "./CelebrationOverlay";
@@ -132,6 +132,105 @@ export default function App() {
       } catch {/* Empty */}
     }, ms);
   }, []);
+
+  const cardRef = useRef<HTMLDivElement | null>(null);
+  const viewRef = useRef<"list" | "year">(view);
+  useEffect(() => {
+    viewRef.current = view;
+  }, [view]);
+
+  const viewDragStartX = useRef<number | null>(null);
+  const viewDragStartY = useRef<number | null>(null);
+  const viewDraggingRef = useRef(false);
+  const viewSwipeLockedRef = useRef(false);
+  const [viewDragX, setViewDragX] = useState(0);
+
+  const VIEW_MIN = -220;
+  const VIEW_MAX = 220;
+  const VIEW_SWIPE_THRESHOLD = 100;
+
+  function isInteractiveTarget(t: EventTarget | null) {
+    const elem = t as Element | null;
+    if (!elem) return false;
+    const tag = (elem.tagName || "").toLowerCase();
+    const interactiveTags = ["button", "input", "select", "a", "textarea", "label"];
+    if (interactiveTags.includes(tag)) return true;
+    if (elem.closest && !!elem.closest(".todo-item")) return true;
+    return false;
+  }
+
+  function onViewPointerDown(e: React.PointerEvent) {
+    if (isInteractiveTarget(e.target)) return;
+
+    if (viewRef.current === "year" && document.querySelector(".calendar-day-panel")) return;
+
+    viewDragStartX.current = e.clientX;
+    viewDragStartY.current = e.clientY;
+    viewDraggingRef.current = true;
+    viewSwipeLockedRef.current = false;
+    setViewDragX(0);
+
+    try { (e.target as Element).setPointerCapture?.(e.pointerId); } catch {/* empty */}
+  }
+
+  function onViewPointerMove(e: React.PointerEvent) {
+    if (!viewDraggingRef.current || viewDragStartX.current === null || viewDragStartY.current === null) return;
+
+    const dx = e.clientX - viewDragStartX.current;
+    const dy = e.clientY - viewDragStartY.current;
+
+    if (!viewSwipeLockedRef.current && Math.abs(dy) > 12 && Math.abs(dy) > Math.abs(dx)) {
+      viewSwipeLockedRef.current = true;
+      viewDraggingRef.current = false;
+      viewDragStartX.current = null;
+      viewDragStartY.current = null;
+      setViewDragX(0);
+      try { (e.target as Element).releasePointerCapture?.(e.pointerId); } catch {/* empty */}
+      return;
+    }
+
+    if (viewSwipeLockedRef.current) return;
+
+    const clamped = Math.max(VIEW_MIN, Math.min(VIEW_MAX, dx));
+    setViewDragX(clamped);
+  }
+
+  function onViewPointerUp(e: React.PointerEvent) {
+    if (!viewDraggingRef.current) {
+      viewDragStartX.current = null;
+      viewDragStartY.current = null;
+      setViewDragX(0);
+      return;
+    }
+    viewDraggingRef.current = false;
+
+    // release pointer capture
+    try { (e.target as Element).releasePointerCapture?.(e.pointerId); } catch {/* empty */}
+
+    const dx = viewDragStartX.current === null ? 0 : e.clientX - viewDragStartX.current;
+    viewDragStartX.current = null;
+    viewDragStartY.current = null;
+
+    if (viewRef.current === "list" && dx <= -VIEW_SWIPE_THRESHOLD) {
+      setViewWithFeedback("year");
+      setViewDragX(0);
+      return;
+    }
+
+    if (viewRef.current === "year" && dx >= VIEW_SWIPE_THRESHOLD) {
+      if (!document.querySelector(".calendar-view-panel")) {
+        setViewWithFeedback("list");
+      } else {
+        // blocked
+        play("error", false);
+      }
+      setViewDragX(0);
+      return;
+    }
+
+    // if movement not enough, return to original position, and do nothing
+    setViewDragX(0);
+  }
 
   const setViewWithFeedback = useCallback((v:  "list" | "year") => {
     setView(v);
@@ -352,7 +451,14 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-app-root flex items-start justify-center py-12 px-4">
-      <div className="w-full max-w-3xl bg-app-card rounded-2xl shadow-lg p-6">
+      <div 
+        ref={cardRef}
+        className="w-full max-w-3xl bg-app-card rounded-2xl shadow-lg p-6 view-swipe-surface"
+        onPointerDown={onViewPointerDown}
+        onPointerMove={onViewPointerMove}
+        onPointerUp={onViewPointerUp}
+        onPointerCancel={onViewPointerUp}
+      >
         <header className="flex items-center justify-between mb-4">
           <h1 className="text-2xl font-semibold">todo or not todo?</h1>
 
@@ -429,6 +535,23 @@ export default function App() {
                 {soundEnabled ? "🔊 Sound" : "🔇 Sound"}
               </button>
             </div>
+
+            {/* View swipe */}
+            <div
+              className={`view-swipe-hint ${viewDragX < 0 ? "to-year" : viewDragX > 0 ? "to-list" : ""}`}
+              style={{
+                transform: `translateX(${viewDragX}px)`,
+                opacity: Math.min(1, Math.abs(viewDragX) / 30),
+                display: Math.abs(viewDragX) > 6 ? "flex" : "none",
+                alignItems: "center",
+                gap: 8,
+                marginLeft: 8,
+              }}
+              aria-hidden
+            >
+              <span className="icon">{view === "list" ? "📅" : "📋"}</span>
+              <span className="label">{view === "list" ? "Year view" : "List view"}</span>
+            </div>
           </div>
         </header>
 
@@ -466,7 +589,6 @@ export default function App() {
 
             // after dust animation finishes, actually clear them
             window.setTimeout(() => {
-              // clear the backups / actual removal
               clearCompleted();
               // cleanup animation flags
               setDustingIds(new Set());
@@ -560,7 +682,7 @@ export default function App() {
               reindeer
             </a>
           </div>
-          <div> Version 2.1.3</div>
+          <div> Version 2.1.4</div>
         </footer>
       </div>
 
@@ -582,7 +704,7 @@ export default function App() {
             border: "1px solid var(--app-border)",
             padding: "10px 14px",
             borderRadius: 10,
-            boxShadow: "0 10px 30px rgba(2,6,23,0.06)",
+            boxShadow: "0 10px 30px rgba(2, 6, 23, 0.06)",
             fontSize: 13,
             color: "var(--app-text)",
             zIndex: 9999,

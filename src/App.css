@@ -1276,3 +1276,64 @@ kbd.help-kbd, .help-kbd kbd {
 .day-cell.is-today .dot.prio-medium { background: var(--prio-medium); }
 .day-cell.is-today .dot.prio-low { background: var(--prio-low); }
 .day-cell.is-today .dot.prio-completed { background: var(--prio-completed); }
+
+/* --- View swipe surface --- */
+.view-swipe-surface {
+  position: relative;
+  touch-action: pan-y; /* allow vertical scrolling */
+}
+
+/* --- Swipe affordance --- */
+.view-swipe-hint {
+  position: absolute;
+  top: 10px;
+  left: 50%;
+  transform: translateX(-50%);
+  pointer-events: none;
+  z-index: 2000;
+
+  display: flex;
+  align-items: center;
+  gap: 10px;
+
+  padding: 6px 12px;
+  border-radius: 999px;
+  font-size: 13px;
+
+  background: var(--app-card);
+  color: var(--app-text);
+
+  box-shadow: 0 6px 18px rgba(2, 6, 23, 0.12);
+  border: 1px solid var(--app-border);
+
+  transition:
+    transform 220ms cubic-bezier(.2,.9,.2,1),
+    opacity 180ms ease;
+}
+
+/* Left swipe → Year */
+.view-swipe-hint.to-year {
+  background: linear-gradient(
+    90deg,
+    rgba(59, 130, 246, 0.18),
+    rgba(59, 130, 246, 0.05)
+  );
+}
+
+/* Right swipe → List */
+.view-swipe-hint.to-list {
+  background: linear-gradient(
+    90deg,
+    rgba(34, 197, 94, 0.18),
+    rgba(34, 197, 94, 0.05)
+  );
+}
+
+.view-swipe-hint .icon {
+  font-size: 18px;
+}
+
+.view-swipe-hint .label {
+  font-weight: 500;
+  color: var(--app-muted);
+}
