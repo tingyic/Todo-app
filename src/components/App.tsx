@@ -1,6 +1,7 @@
 import { haptic, play, isSoundEnabled, setSoundEnabled } from "../utils/sound";
-import { useMemo, useState, useEffect, useRef, useCallback } from "react";
+import React, { useMemo, useState, useEffect, useRef, useCallback } from "react";
 import { useTodos } from "../hooks/useTodos";
+import AnnualCalendar, { type ImperativeCalendarHandle } from "./AnnualCalendar";
 import CelebrateOverlay from "./CelebrationOverlay";
 import HelpButton from "./HelpButton";
 import ReminderManager from "./ReminderManager";
@@ -24,7 +25,11 @@ export default function App() {
     canRedo,
   } = useTodos();
 
+  const calRef = useRef<ImperativeCalendarHandle | null>(null);
+
   const [selectedId, setSelectedId] = useState<string | null>(null);
+
+  const [view, setView] = useState<"list" | "year">("list");
   
   const [filter, setFilter] = useState<"all" | "active" | "completed">("all");
   const [query, setQuery] = useState("");
@@ -127,6 +132,112 @@ export default function App() {
       } catch {/* Empty */}
     }, ms);
   }, []);
+
+  const cardRef = useRef<HTMLDivElement | null>(null);
+  const viewRef = useRef<"list" | "year">(view);
+  useEffect(() => {
+    viewRef.current = view;
+  }, [view]);
+
+  const viewDragStartX = useRef<number | null>(null);
+  const viewDragStartY = useRef<number | null>(null);
+  const viewDraggingRef = useRef(false);
+  const viewSwipeLockedRef = useRef(false);
+  const [viewDragX, setViewDragX] = useState(0);
+
+  const VIEW_MIN = -220;
+  const VIEW_MAX = 220;
+  const VIEW_SWIPE_THRESHOLD = 100;
+
+  function isInteractiveTarget(t: EventTarget | null) {
+    const elem = t as Element | null;
+    if (!elem) return false;
+    const tag = (elem.tagName || "").toLowerCase();
+    const interactiveTags = ["button", "input", "select", "a", "textarea", "label"];
+    if (interactiveTags.includes(tag)) return true;
+    if (elem.closest && !!elem.closest(".todo-item")) return true;
+    return false;
+  }
+
+  function onViewPointerDown(e: React.PointerEvent) {
+    if (isInteractiveTarget(e.target)) return;
+
+    if (viewRef.current === "year" && document.querySelector(".calendar-day-panel")) return;
+
+    viewDragStartX.current = e.clientX;
+    viewDragStartY.current = e.clientY;
+    viewDraggingRef.current = true;
+    viewSwipeLockedRef.current = false;
+    setViewDragX(0);
+
+    try { (e.target as Element).setPointerCapture?.(e.pointerId); } catch {/* empty */}
+  }
+
+  function onViewPointerMove(e: React.PointerEvent) {
+    if (!viewDraggingRef.current || viewDragStartX.current === null || viewDragStartY.current === null) return;
+
+    const dx = e.clientX - viewDragStartX.current;
+    const dy = e.clientY - viewDragStartY.current;
+
+    if (!viewSwipeLockedRef.current && Math.abs(dy) > 12 && Math.abs(dy) > Math.abs(dx)) {
+      viewSwipeLockedRef.current = true;
+      viewDraggingRef.current = false;
+      viewDragStartX.current = null;
+      viewDragStartY.current = null;
+      setViewDragX(0);
+      try { (e.target as Element).releasePointerCapture?.(e.pointerId); } catch {/* empty */}
+      return;
+    }
+
+    if (viewSwipeLockedRef.current) return;
+
+    const clamped = Math.max(VIEW_MIN, Math.min(VIEW_MAX, dx));
+    setViewDragX(clamped);
+  }
+
+  function onViewPointerUp(e: React.PointerEvent) {
+    if (!viewDraggingRef.current) {
+      viewDragStartX.current = null;
+      viewDragStartY.current = null;
+      setViewDragX(0);
+      return;
+    }
+    viewDraggingRef.current = false;
+
+    // release pointer capture
+    try { (e.target as Element).releasePointerCapture?.(e.pointerId); } catch {/* empty */}
+
+    const dx = viewDragStartX.current === null ? 0 : e.clientX - viewDragStartX.current;
+    viewDragStartX.current = null;
+    viewDragStartY.current = null;
+
+    if (viewRef.current === "list" && dx <= -VIEW_SWIPE_THRESHOLD) {
+      setViewWithFeedback("year");
+      setViewDragX(0);
+      return;
+    }
+
+    if (viewRef.current === "year" && dx >= VIEW_SWIPE_THRESHOLD) {
+      if (!document.querySelector(".calendar-view-panel")) {
+        setViewWithFeedback("list");
+      } else {
+        // blocked
+        play("error", false);
+      }
+      setViewDragX(0);
+      return;
+    }
+
+    // if movement not enough, return to original position, and do nothing
+    setViewDragX(0);
+  }
+
+  const setViewWithFeedback = useCallback((v:  "list" | "year") => {
+    setView(v);
+    play("click", false);
+    try {haptic(25);} catch {/* empty */}
+    showToast(v === "year" ? "Year view" : "List view", 700);
+  }, [showToast])
 
   useEffect(() => {
     if (toast) {
@@ -244,6 +355,17 @@ export default function App() {
         }
       }
 
+      if ((key === "arrowleft" || key === "arrowright") && view === "year") {
+        if (document.querySelector(".calendar-day-panel")) {
+          // do nothing
+        } else {
+          e.preventDefault();
+          if (key === "arrowleft") calRef.current?.prev?.();
+          else calRef.current?.next?.();
+          return;
+        }
+      }
+
       switch (key) {
         case "t": {
           // Theme toggle (T for theme)
@@ -325,11 +447,18 @@ export default function App() {
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [undo, redo, canUndo, canRedo, toggleTheme, toggleReminders, toggleSound, setFilterWithFeedback, showToast, visible, selectedId]);
+  }, [undo, redo, canUndo, canRedo, toggleTheme, toggleReminders, toggleSound, setFilterWithFeedback, showToast, visible, selectedId, view]);
 
   return (
     <div className="min-h-screen bg-app-root flex items-start justify-center py-12 px-4">
-      <div className="w-full max-w-3xl bg-app-card rounded-2xl shadow-lg p-6">
+      <div 
+        ref={cardRef}
+        className="w-full max-w-3xl bg-app-card rounded-2xl shadow-lg p-6 view-swipe-surface"
+        onPointerDown={onViewPointerDown}
+        onPointerMove={onViewPointerMove}
+        onPointerUp={onViewPointerUp}
+        onPointerCancel={onViewPointerUp}
+      >
         <header className="flex items-center justify-between mb-4">
           <h1 className="text-2xl font-semibold">todo or not todo?</h1>
 
@@ -406,6 +535,23 @@ export default function App() {
                 {soundEnabled ? "🔊 Sound" : "🔇 Sound"}
               </button>
             </div>
+
+            {/* View swipe */}
+            <div
+              className={`view-swipe-hint ${viewDragX < 0 ? "to-year" : viewDragX > 0 ? "to-list" : ""}`}
+              style={{
+                transform: `translateX(${viewDragX}px)`,
+                opacity: Math.min(1, Math.abs(viewDragX) / 30),
+                display: Math.abs(viewDragX) > 6 ? "flex" : "none",
+                alignItems: "center",
+                gap: 8,
+                marginLeft: 8,
+              }}
+              aria-hidden
+            >
+              <span className="icon">{view === "list" ? "📅" : "📋"}</span>
+              <span className="label">{view === "list" ? "Year view" : "List view"}</span>
+            </div>
           </div>
         </header>
 
@@ -443,8 +589,7 @@ export default function App() {
 
             // after dust animation finishes, actually clear them
             window.setTimeout(() => {
-              // clear the backups / actual removal
-              clearCompleted(); // call your hook to remove completed items from state
+              clearCompleted();
               // cleanup animation flags
               setDustingIds(new Set());
               // final success hint
@@ -468,41 +613,55 @@ export default function App() {
           todos={todos}
           setTodos={setTodos}
           showToast={showToast}
+          view={view}
+          setView={setViewWithFeedback}
         />
 
         <main>
-          <TodoList
-            todos={visible}
-            dustingIds={dustingIds}
-            selectedId={selectedId}
-            setSelectedId={setSelectedId}
-            showToast={showToast}
-            onToggle={(id: string, createNext?: boolean | null) => {
-              const t = todos.find(x => x.id === id);
-              const wasDone = !!t?.done;
-              toggle(id, createNext);
-              
-              if (!wasDone) {
-                play("celebrate", true);
-                haptic([50, 30, 50]);
-                showToast("Yayyyyy lesgoooo task completed weeeee 🎉", 1400);
-              } else {
+          {view === "list" ? (
+            <TodoList
+              todos={visible}
+              dustingIds={dustingIds}
+              selectedId={selectedId}
+              setSelectedId={setSelectedId}
+              showToast={showToast}
+              onToggle={(id: string, createNext?: boolean | null) => {
+                const t = todos.find(x => x.id === id);
+                const wasDone = !!t?.done;
+                toggle(id, createNext);
+                
+                if (!wasDone) {
+                  play("celebrate", true);
+                  haptic([50, 30, 50]);
+                  showToast("Yayyyyy lesgoooo task completed weeeee 🎉", 1400);
+                } else {
+                  play("click", false);
+                  showToast("Marked as not done", 900)
+                }
+              }}
+              onRemove={id => {
+                setSelectedId(prev => (prev === id ? null : prev));
+                remove(id);
+                play("delete", true);
+                showToast("Deleted", 900);
+              }}
+              onUpdate={(id, patch, toastMsg) => {
+                update(id, patch);
                 play("click", false);
-                showToast("Marked as not done", 900)
-              }
-            }}
-            onRemove={id => {
-              setSelectedId(prev => (prev === id ? null : prev));
-              remove(id);
-              play("delete", true);
-              showToast("Deleted", 900);
-            }}
-            onUpdate={(id, patch, toastMsg) => {
-              update(id, patch);
-              play("click", false);
-              showToast(toastMsg ?? "Saved", 800);
-            }}
-          />
+                showToast(toastMsg ?? "Saved", 800);
+              }}
+            />
+            ) : (
+              <AnnualCalendar
+                ref={calRef}
+                todos={todos}
+                onOpenTask={(id) => {
+                  setViewWithFeedback("list");
+                  setSelectedId(id);
+                  showToast("Opened task in list", 800);
+                }}
+              />
+            )}
         </main>
 
         <footer className="mt-6 flex items-center justify-between text-sm text-app-muted">
@@ -523,7 +682,7 @@ export default function App() {
               reindeer
             </a>
           </div>
-          <div> Version 2.0.5</div>
+          <div> Version 2.1.4</div>
         </footer>
       </div>
 
@@ -545,7 +704,7 @@ export default function App() {
             border: "1px solid var(--app-border)",
             padding: "10px 14px",
             borderRadius: 10,
-            boxShadow: "0 10px 30px rgba(2,6,23,0.06)",
+            boxShadow: "0 10px 30px rgba(2, 6, 23, 0.06)",
             fontSize: 13,
             color: "var(--app-text)",
             zIndex: 9999,

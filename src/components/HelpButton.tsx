@@ -73,6 +73,7 @@ export default function HelpButton() {
     { key: "K", desc: "Sort by active / incomplete tasks" },
     { key: "L", desc: "Sort by inactive / completed tasks" },
     { key: "?", desc: "Open/close this help panel quickly" },
+    { key: "Arrow left / right", desc: "When in annual calendar view, scroll across different years. When a day is chosen, scroll across different days"},
   ];
 
   return (
