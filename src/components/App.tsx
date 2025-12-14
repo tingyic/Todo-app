@@ -4,6 +4,7 @@ import { useTodos } from "../hooks/useTodos";
 import AnnualCalendar, { type ImperativeCalendarHandle } from "./AnnualCalendar";
 import CelebrateOverlay from "./CelebrationOverlay";
 import HelpButton from "./HelpButton";
+import MonthlyCalendar from "./MonthlyCalendar";
 import ReminderManager from "./ReminderManager";
 import TodoEditor from "./TodoEditor";
 import TodoList from "./TodoList";
@@ -29,7 +30,7 @@ export default function App() {
 
   const [selectedId, setSelectedId] = useState<string | null>(null);
 
-  const [view, setView] = useState<"list" | "year">("list");
+  const [view, setView] = useState<"list" | "year" | "month">("list");
   
   const [filter, setFilter] = useState<"all" | "active" | "completed">("all");
   const [query, setQuery] = useState("");
@@ -134,7 +135,7 @@ export default function App() {
   }, []);
 
   const cardRef = useRef<HTMLDivElement | null>(null);
-  const viewRef = useRef<"list" | "year">(view);
+  const viewRef = useRef<"list" | "year" | "month">(view);
   useEffect(() => {
     viewRef.current = view;
   }, [view]);
@@ -183,7 +184,6 @@ export default function App() {
       viewSwipeLockedRef.current = true;
       viewDraggingRef.current = false;
       viewDragStartX.current = null;
-      viewDragStartY.current = null;
       setViewDragX(0);
       try { (e.target as Element).releasePointerCapture?.(e.pointerId); } catch {/* empty */}
       return;
@@ -228,15 +228,27 @@ export default function App() {
       return;
     }
 
+    if (viewRef.current === "list" && dx >= VIEW_SWIPE_THRESHOLD) {
+      setViewWithFeedback("month");
+      setViewDragX(0);
+      return;
+    }
+
+    if (viewRef.current === "month" && dx <= -VIEW_SWIPE_THRESHOLD) {
+      setViewWithFeedback("list");
+      setViewDragX(0);
+      return;
+    }
+
     // if movement not enough, return to original position, and do nothing
     setViewDragX(0);
   }
 
-  const setViewWithFeedback = useCallback((v:  "list" | "year") => {
+  const setViewWithFeedback = useCallback((v:  "list" | "year" | "month") => {
     setView(v);
     play("click", false);
     try {haptic(25);} catch {/* empty */}
-    showToast(v === "year" ? "Year view" : "List view", 700);
+    showToast(v === "year" ? "Year view" : v === "month" ? "Month view" : "List view", 700);
   }, [showToast])
 
   useEffect(() => {
@@ -536,6 +548,38 @@ export default function App() {
               </button>
             </div>
 
+            {/* VIEW TOGGLE */}
+            <div style={{ display: "flex", gap: 8, alignItems: "center", marginLeft: 6}}>
+              <button 
+                className="btn-plain"
+                onClick={() => setViewWithFeedback("list")}
+                aria-pressed={view === "list"}
+                title="List view"
+                style={{ padding: "6px 10px" }}
+              >
+                List
+              </button>
+
+              <button
+                className="btn-plain"
+                onClick={() => setViewWithFeedback("year")}
+                aria-pressed={view === "month"}
+                title="Year view"
+                style={{ padding: "6px 10px" }}
+              >
+                Year
+              </button>
+
+              <button
+                className="btn-plain"
+                onClick={() => setViewWithFeedback("month")}
+                title="Month"
+                style={{ padding: "6px 10px"}}
+              >
+                Month
+              </button>
+            </div>
+
             {/* View swipe */}
             <div
               className={`view-swipe-hint ${viewDragX < 0 ? "to-year" : viewDragX > 0 ? "to-list" : ""}`}
@@ -651,19 +695,32 @@ export default function App() {
                 showToast(toastMsg ?? "Saved", 800);
               }}
             />
-            ) : (
-              <AnnualCalendar
-                ref={calRef}
-                todos={todos}
-                onOpenTask={(id) => {
-                  setViewWithFeedback("list");
-                  setSelectedId(id);
-                  showToast("Opened task in list", 800);
-                }}
-              />
-            )}
+          ) : view === "year" ? (
+            <AnnualCalendar
+              ref={calRef}
+              todos={todos}
+              onOpenTask={(id) => {
+                setViewWithFeedback("list");
+                setSelectedId(id);
+                showToast("Opened task in list", 800);
+              }}
+            />
+          ) : (
+            <MonthlyCalendar
+              todos={todos}
+              onOpenTask={(id) => {
+                // reuse same behavior as annual calendar -> open list + focus task
+                setViewWithFeedback("list");
+                setSelectedId(id);
+                showToast("Opened task in list", 800);
+              }}
+              onToggle={(id) => toggle(id)}
+              onRemove={(id) => remove(id)}
+              onUpdate={(id, patch) => update(id, patch)}
+            />
+          )}
         </main>
-
+        
         <footer className="mt-6 flex items-center justify-between text-sm text-app-muted">
           <div>{stats.total} {stats.total === 1 ? "item" : "items"}</div>
           <div> Have a nice day :)</div>
@@ -682,7 +739,7 @@ export default function App() {
               reindeer
             </a>
           </div>
-          <div> Version 2.1.4</div>
+          <div> Version 2.2</div>
         </footer>
       </div>
 

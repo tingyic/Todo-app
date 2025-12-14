@@ -14,8 +14,8 @@ type Props = {
   todos: Todo[];
   setTodos: (t: Todo[]) => void;
   showToast: (msg: string, ms?: number) => void;
-  view?: "list" | "year";
-  setView?: (v: "list" | "year") => void;
+  view?: "list" | "year" | "month";
+  setView?: (v: "list" | "year" | "month") => void;
 };
 
 export default function Toolbar({
@@ -30,8 +30,6 @@ export default function Toolbar({
   todos,
   setTodos: setTodos,
   showToast,
-  view,
-  setView,
 }: Props) {
   function onSortChange(e: ChangeEvent<HTMLSelectElement>) {
     setSortBy(e.target.value as "created" | "due" | "priority");
@@ -79,28 +77,6 @@ export default function Toolbar({
       </div>
 
       <div className="toolbar flex items-center gap-2 ml-auto">
-        {/* VIEW TOGGLE */}
-        <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
-          <button
-            type="button"
-            className={`px-2 py-1 rounded text-sm ${view === "list" ? "bg-white shadow" : "text-slate-600"}`}
-            onClick={() => setView?.("list")}
-            aria-pressed={view === "list"}
-            title="List view"
-          >
-            List
-          </button>
-          <button 
-            type="button"
-            className={`px-2 py-1 rounded text-sm ${view === "year" ? "bg-white shadow" : "text-slate-600"}`}
-            onClick={() => setView?.("year")}
-            aria-pressed={view === "year"}
-            title="Year view"
-          >
-            Year
-          </button>
-        </div>
-        
         <input className="rounded-md border p-1 px-2 text-sm" placeholder="Search tags or text" value={query} onChange={(e) => setQuery(e.target.value)} />
         <select className="rounded-md border p-1 text-sm" value={sortBy} onChange={onSortChange}>
           <option value="created">Newest</option>
