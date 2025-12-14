@@ -1,6 +1,7 @@
-import { useMemo, useState, useEffect } from "react";
+import { useMemo, useState, useEffect, useCallback } from "react";
 import type { Todo } from "../types";
 import { parseLocalDateTime, formatLocalDateTime } from "../utils/dates";
+import { haptic, play } from "../utils/sound";
 
 type Props = {
   todos: Todo[];
@@ -51,12 +52,81 @@ export default function MonthlyCalendar({ todos, initialDate, onOpenTask, onTogg
   // selected day key (YYYY-MM-DD) - default today
   const [selectedKey, setSelectedKey] = useState<string>(() => dateKey(today));
 
+  const prevMonth = useCallback(() => {
+    setMonthDate(m => new Date(m.getFullYear(), m.getMonth() - 1, 1));
+    play("whoosh", false);
+    haptic(15);
+  }, []);
+  const nextMonth = useCallback(() => {
+    setMonthDate(m => new Date(m.getFullYear(), m.getMonth() + 1, 1));
+    play("whoosh", false);
+    haptic(15);
+  },[]);
+  
+  const [showMonthPicker, setShowMonthPicker] = useState(false);
+  const [showYearPicker, setShowYearPicker] = useState<number>(() => monthDate.getFullYear());
+
   // when initialDate changes (rare), sync month/selected
   useEffect(() => {
     if (!initialDate) return;
     setMonthDate(new Date(initialDate.getFullYear(), initialDate.getMonth(), 1));
     setSelectedKey(dateKey(initialDate));
   }, [initialDate]);
+
+  // arrow left/right to scroll between months
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      if (showMonthPicker) return;
+
+      const k = e.key.toLowerCase();
+      if (k === "arrowleft") {
+        e.preventDefault();
+        prevMonth();
+        haptic(15);
+      } else if (k === "arrowright") {
+        e.preventDefault();
+        nextMonth();
+        haptic(15);
+      }
+    }
+
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [prevMonth, nextMonth, showMonthPicker]);
+
+  // decade scroll
+  useEffect(()=> {
+    if (!showMonthPicker) return;
+
+    function onKey(e: KeyboardEvent) {
+      const k = e.key.toLowerCase();
+
+      if (k === "escape") {
+        e.preventDefault();
+        setShowMonthPicker(false);
+        play("click", false);
+        haptic(20);
+        return;
+      }
+
+      if (k === "arrowleft") {
+        e.preventDefault();
+        setShowYearPicker(y => y - (e.shiftKey ? 10 : 1));
+        play("whoosh", false);
+        haptic(10);
+      }
+
+      if (k === "arrowright") {
+        e.preventDefault();
+        setShowYearPicker(y => y + (e.shiftKey ? 10 : 1));
+        play("whoosh", false);
+        haptic(10);
+      }
+    }
+
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [showMonthPicker]);
 
   // build calendar cells (6 rows x 7 cols = 42 cells)
   const cells = useMemo(() => {
@@ -92,16 +162,12 @@ export default function MonthlyCalendar({ todos, initialDate, onOpenTask, onTogg
 
   const tasksForSelected = todosByDay.get(selectedKey) ?? [];
 
-  function prevMonth() {
-    setMonthDate(m => new Date(m.getFullYear(), m.getMonth() - 1, 1));
-  }
-  function nextMonth() {
-    setMonthDate(m => new Date(m.getFullYear(), m.getMonth() + 1, 1));
-  }
   function goToday() {
     const t = new Date();
     setMonthDate(new Date(t.getFullYear(), t.getMonth(), 1));
     setSelectedKey(dateKey(t));
+    play("click", false);
+    haptic(20);
   }
 
   return (
@@ -119,12 +185,105 @@ export default function MonthlyCalendar({ todos, initialDate, onOpenTask, onTogg
             <button className="btn-plain" onClick={nextMonth} aria-label="Next month">▶</button>
           </div>
 
-          <div style={{ fontWeight: 600 }}>{monthLabel(monthDate)}</div>
+          <button
+            className="btn-plain"
+            style={{ fontWeight: 600 }}
+            onClick={() => {
+              setShowYearPicker(monthDate.getFullYear());
+              setShowMonthPicker(true);
+              play("click", false);
+              haptic(20);
+            }}
+          >
+            {monthLabel(monthDate)}
+          </button>
 
           <div style={{ minWidth: 120, textAlign: "right", color: "var(--app-muted)" }}>
             Click day to view tasks
           </div>
         </div>
+
+        {/* Month picker */}
+        {showMonthPicker && (
+          <div
+            onClick={(e) => e.stopPropagation()}
+            role="dialog"
+            aria-modal="true"
+            className="month-picker"
+            style={{
+              width: "min(560px, 96%)",
+              borderRadius: 10,
+              padding: 12,
+              background: "var(--app-card)",
+              border: "1px solid var(--app-border)",
+              boxShadow: "0 8px 30px rgba(2, 6, 23, 0.08)",
+              display: "grid",
+              gridTemplateColumns: "1fr",
+              gap: 12,
+            }}
+          >
+            {/* Year picker row */}
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+              <button
+                className="btn-plain"
+                aria-label="Previous year"
+                onClick={() => {
+                  setShowYearPicker(y => y - 1);
+                  play("whoosh", false);
+                  haptic(10);
+                }}
+              >
+                ◀
+              </button>
+
+              <div style={{ fontWeight: 700 }}>{showYearPicker}</div>
+
+              <button
+                className="btn-plain"
+                aria-label="Next year"
+                onClick={() => {
+                  setShowYearPicker(y => y + 1);
+                  play("whoosh", false);
+                  haptic(10);
+                }}
+              >
+                ▶
+              </button>
+            </div>
+
+            {/* Months grid */}
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 8 }}>
+              {Array.from({ length: 12 }).map((_, m) => {
+                const isActive = showYearPicker === monthDate.getFullYear() && m === monthDate.getMonth();
+                return (
+                  <button
+                    key={m}
+                    className="btn-plain"
+                    onClick={() => {
+                      setMonthDate(new Date(showYearPicker, m, 1));
+                      setShowMonthPicker(false);
+                      play("click", false);
+                      haptic(20);
+                    }}
+                    style={{
+                      fontWeight: isActive ? 700 : 500,
+                      opacity: isActive ? 1 : 0.85,
+                      textAlign: "center",
+                      padding: "8px 10px",
+                      borderRadius: 8,
+                    }}
+                  >
+                    {new Date(0, m).toLocaleString(undefined, { month: "short" })}
+                  </button>
+                );
+              })}
+            </div>
+
+            <div style={{ textAlign: "right", color: "var(--app-muted)", fontSize: 13 }}>
+              Use ← → to change year, Shift+←/→ for ±10 years, Esc to close
+            </div>
+          </div>
+        )}
 
         <div className="monthly-grid" style={{ display: "grid", gridTemplateColumns: "repeat(7, minmax(0, 1fr))", gap: 6 }}>
           {/* Day names */}
@@ -142,7 +301,11 @@ export default function MonthlyCalendar({ todos, initialDate, onOpenTask, onTogg
               <button
                 key={idx}
                 type="button"
-                onClick={() => setSelectedKey(key)}
+                onClick={() => {
+                  setSelectedKey(key);
+                  play("click", false);
+                  haptic(10);
+                }}
                 className={`mc-day ${isCurrentMonth ? "" : "mc-day-outside"} ${isToday ? "mc-today" : ""} ${isSelected ? "mc-selected" : ""}`}
                 style={{
                   minHeight: 64,
