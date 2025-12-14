@@ -563,7 +563,7 @@ export default function App() {
               <button
                 className="btn-plain"
                 onClick={() => setViewWithFeedback("year")}
-                aria-pressed={view === "month"}
+                aria-pressed={view === "year"}
                 title="Year view"
                 style={{ padding: "6px 10px" }}
               >
@@ -573,6 +573,7 @@ export default function App() {
               <button
                 className="btn-plain"
                 onClick={() => setViewWithFeedback("month")}
+                aria-pressed={view === "month"}
                 title="Month"
                 style={{ padding: "6px 10px"}}
               >
@@ -739,7 +740,7 @@ export default function App() {
               reindeer
             </a>
           </div>
-          <div> Version 2.2</div>
+          <div> Version 2.2.1</div>
         </footer>
       </div>
 

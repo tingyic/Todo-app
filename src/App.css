@@ -1355,5 +1355,10 @@ kbd.help-kbd, .help-kbd kbd {
 .btn-plain[aria-pressed="true"] {
   background: var(--app-card);
   border: 1px solid var(--app-border);
-  box-shadow: 0 6px 16px rgba(2,6,23,0.04);
+  box-shadow: 0 6px 16px rgba(2, 6, 23, 0.04);
+}
+
+.mc-task-done {
+  color: var(--app-muted);
+  text-decoration: line-through;
 }

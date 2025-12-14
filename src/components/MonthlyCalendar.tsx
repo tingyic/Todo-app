@@ -23,6 +23,15 @@ function monthLabel(d: Date) {
   return d.toLocaleString(undefined, { month: "long", year: "numeric" });
 }
 
+function monthPreviewSort(a: Todo, b: Todo) {
+    if (a.done !== b.done) {
+        return a.done ? 1 : -1;
+    }
+
+    const weight = { high: 0, medium: 1, low: 2 } as const;
+    return weight[a.priority] - weight[b.priority];
+}
+
 export default function MonthlyCalendar({ todos, initialDate, onOpenTask, onToggle, onRemove, onUpdate }: Props) {
   const today = useMemo(() => {
     const t = new Date();
@@ -35,6 +44,9 @@ export default function MonthlyCalendar({ todos, initialDate, onOpenTask, onTogg
     const d = initialDate ? new Date(initialDate) : new Date();
     return new Date(d.getFullYear(), d.getMonth(), 1);
   });
+
+  const isCurrentMonth = 
+    monthDate.getFullYear() === today.getFullYear() && monthDate.getMonth() === today.getMonth();
 
   // selected day key (YYYY-MM-DD) - default today
   const [selectedKey, setSelectedKey] = useState<string>(() => dateKey(today));
@@ -99,7 +111,11 @@ export default function MonthlyCalendar({ todos, initialDate, onOpenTask, onTogg
         <div className="monthly-header" style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
           <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
             <button className="btn-plain" onClick={prevMonth} aria-label="Previous month">◀</button>
-            <button className="btn-plain" onClick={goToday} aria-label="Go to today">Today</button>
+
+            {!isCurrentMonth && (
+                <button className="btn-plain" onClick={goToday} aria-label="Go to today">Today</button>
+            )}
+
             <button className="btn-plain" onClick={nextMonth} aria-label="Next month">▶</button>
           </div>
 
@@ -110,7 +126,7 @@ export default function MonthlyCalendar({ todos, initialDate, onOpenTask, onTogg
           </div>
         </div>
 
-        <div className="monthly-grid" style={{ display: "grid", gridTemplateColumns: "repeat(7,1fr)", gap: 6 }}>
+        <div className="monthly-grid" style={{ display: "grid", gridTemplateColumns: "repeat(7, minmax(0, 1fr))", gap: 6 }}>
           {/* Day names */}
           {["Sun","Mon","Tue","Wed","Thu","Fri","Sat"].map(dn => (
             <div key={dn} style={{ fontSize: 12, textAlign: "center", color: "var(--app-muted)" }}>{dn}</div>
@@ -136,6 +152,9 @@ export default function MonthlyCalendar({ todos, initialDate, onOpenTask, onTogg
                   alignItems: "flex-start",
                   gap: 6,
                   borderRadius: 8,
+                  maxWidth: "100%",
+                  minWidth: 0,
+                  overflow: "hidden",
                   border: isSelected ? "1px solid var(--app-accent)" : "1px solid transparent",
                   background: isSelected ? "var(--app-card)" : "transparent",
                   opacity: isCurrentMonth ? 1 : 0.45,
@@ -144,14 +163,37 @@ export default function MonthlyCalendar({ todos, initialDate, onOpenTask, onTogg
                 aria-pressed={isSelected}
                 aria-label={`Day ${cell.getDate()} ${isToday ? "(today)" : ""}, ${tasks.length} tasks`}
               >
-                <div style={{ display: "flex", justifyContent: "space-between", width: "100%" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", width: "100%", flexWrap: "wrap" }}>
                   <div style={{ fontWeight: isToday ? 700 : 500 }}>{cell.getDate()}</div>
                   {tasks.length ? <div style={{ fontSize: 12 }} className="tag">{tasks.length}</div> : null}
                 </div>
 
-                <div style={{ fontSize: 12, color: "var(--app-muted)", width: "100%", display: "flex", gap: 6, flexWrap: "wrap" }}>
+                <div style={{ fontSize: 12, color: "var(--app-muted)", width: "100%", display: "flex", gap: 6, flexDirection: "column", overflow: "hidden" }}>
                   {/* show up to 2 task titles as preview */}
-                  {tasks.slice(0,2).map(t => <span key={t.id} style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{t.text}</span>)}
+                  {tasks
+                    .slice()
+                    .sort(monthPreviewSort)
+                    .slice(0, 2)
+                    .map(t => (
+                        <span
+                            key={t.id}
+                            className={
+                                t.done
+                                ? "mc-task-done"
+                                : `prio-${t.priority}`
+                            }
+                            style={{
+                                whiteSpace: "nowrap",
+                                overflow: "hidden",
+                                textOverflow: "ellipsis",
+                                maxWidth: "100%",
+                                minWidth: 0
+                            }}
+                            title={t.text}
+                        >
+                            {t.text}
+                        </span>
+                    ))}
                 </div>
               </button>
             );
@@ -182,7 +224,7 @@ export default function MonthlyCalendar({ todos, initialDate, onOpenTask, onTogg
                     <input aria-label={`Toggle ${t.text}`} type="checkbox" checked={!!t.done} onChange={() => onToggle?.(t.id)} />
                     <div style={{ display: "flex", flexDirection: "column" }}>
                       <button className="btn-plain" onClick={() => onOpenTask?.(t.id)} style={{ textAlign: "left", padding: 0 }}>
-                        <div style={{ fontWeight: 600 }}>{t.text}</div>
+                        <div className={t.done ? "mc-task-done" : `prio-${t.priority}` } style={{ fontWeight: 600 }}>{t.text}</div>
                       </button>
                       <div style={{ fontSize: 12, color: "var(--app-muted)" }}>{pd ? formatLocalDateTime(t.due!) : ""}</div>
                     </div>
