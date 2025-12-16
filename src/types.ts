@@ -29,3 +29,12 @@ export type Subtask = {
   subtasks?: Subtask[];
   notes?: string;
 };
+
+export type AddPayload = {
+  text: string;
+  tags?: string[];
+  due?: string | null;
+  priority?: Priority;
+  recurrence?: Recurrence | null;
+  reminders?: number[]; // minutes before due
+};

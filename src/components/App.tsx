@@ -134,6 +134,25 @@ export default function App() {
     }, ms);
   }, []);
 
+  const handleToggleWithFeedback = useCallback(
+    (id: string, createNext?: boolean | null) => {
+      const t = todos.find(x => x.id === id);
+      const wasDone = !!t?.done;
+
+      toggle(id, createNext);
+
+      if (!wasDone) {
+        play("celebrate", true);
+        haptic([50, 30, 50]);
+        showToast("Yayyyyy lesgoooo task completed weeeee 🎉", 1400);
+      } else {
+        play("click", false);
+        showToast("Marked as not done", 900);
+      }
+    },
+    [todos, toggle, showToast]
+  );
+
   const cardRef = useRef<HTMLDivElement | null>(null);
   const viewRef = useRef<"list" | "year" | "month">(view);
   useEffect(() => {
@@ -299,6 +318,18 @@ export default function App() {
       return next;
     });
   }, [showToast]);
+
+  // Add tasks directly from monthly calendar view
+  const [showAddModal, setShowAddModal] = useState(false);
+  const [addModalDate, setAddModalDate] = useState<Date | null>(null);
+
+  function toDateTimeLocal(d: Date) {
+    const pad = (n: number) => (n < 10 ? `0${n}` : `${n}`);
+    const now = new Date();
+    const hh = pad(now.getHours());
+    const mm = pad(now.getMinutes());
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${hh}:${mm}`;
+  }
 
   const setFilterWithFeedback = useCallback((f: "all" | "active" | "completed") => {
     setFilter(f);
@@ -662,6 +693,63 @@ export default function App() {
           setView={setViewWithFeedback}
         />
 
+        {showAddModal && (
+          <div
+            className="modal-overlay"
+            onClick={() => setShowAddModal(false)}
+            style={{
+              position: "fixed",
+              inset: 0,
+              zIndex: 3000,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              background: "var(--app-card)",
+              padding: 16,
+            }}
+          >
+            <div
+              role="dialog"
+              aria-modal="true"
+              onClick={(e) => e.stopPropagation()}
+              style={{
+                width: "min(760px, 96%)",
+                borderRadius: 12,
+                padding: 16,
+                background: "var(--app-card)",
+                border: "1px solid var(--app-border)",
+                boxShadow: "0 12px 40px rgba(2, 6, 23, 0.12)",
+              }}
+            >
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+                <div style={{ fontWeight: 700 }}>
+                  Add task - {addModalDate ? addModalDate.toLocaleDateString() : ""}
+                </div>
+                <div>
+                  <button className="btn-plain" onClick={() => { setShowAddModal(false); }}>
+                    ✕
+                  </button>
+                  </div>
+              </div>
+
+              <TodoEditor
+                initialDue={addModalDate ? toDateTimeLocal(addModalDate) : undefined}
+                onAdd={(payload) => {
+                  add(payload);
+                  play("add", false);
+                  showToast("Task added", 900);
+                  setShowAddModal(false);
+                  setAddModalDate(null);
+                }}
+              />
+
+              <div style={{ textAlign: "right", marginTop: 8 }}>
+                <button className="btn-plain" onClick={() => setShowAddModal(false)}>Cancel</button>
+              </div>
+            </div>
+          </div>
+        )}
+
         <main>
           {view === "list" ? (
             <TodoList
@@ -670,20 +758,7 @@ export default function App() {
               selectedId={selectedId}
               setSelectedId={setSelectedId}
               showToast={showToast}
-              onToggle={(id: string, createNext?: boolean | null) => {
-                const t = todos.find(x => x.id === id);
-                const wasDone = !!t?.done;
-                toggle(id, createNext);
-                
-                if (!wasDone) {
-                  play("celebrate", true);
-                  haptic([50, 30, 50]);
-                  showToast("Yayyyyy lesgoooo task completed weeeee 🎉", 1400);
-                } else {
-                  play("click", false);
-                  showToast("Marked as not done", 900)
-                }
-              }}
+              onToggle={handleToggleWithFeedback}
               onRemove={id => {
                 setSelectedId(prev => (prev === id ? null : prev));
                 remove(id);
@@ -709,15 +784,28 @@ export default function App() {
           ) : (
             <MonthlyCalendar
               todos={todos}
+              onAddTask={(payload) => {
+                add(payload);
+                play("add", false);
+                showToast("Task added", 900);
+              }}
               onOpenTask={(id) => {
                 // reuse same behavior as annual calendar -> open list + focus task
                 setViewWithFeedback("list");
                 setSelectedId(id);
                 showToast("Opened task in list", 800);
               }}
-              onToggle={(id) => toggle(id)}
-              onRemove={(id) => remove(id)}
-              onUpdate={(id, patch) => update(id, patch)}
+              onToggle={handleToggleWithFeedback}
+              onRemove={(id) => {
+                remove(id);
+                play("delete", true);
+                showToast("Deleted", 900);
+              }}
+              onUpdate={(id, patch, toastMsg) => {
+                update(id, patch);
+                play("click", false);
+                showToast(toastMsg ?? "Saved", 800);
+              }}
             />
           )}
         </main>
@@ -740,7 +828,7 @@ export default function App() {
               reindeer
             </a>
           </div>
-          <div> Version 2.2.2</div>
+          <div> Version 2.2.3</div>
         </footer>
       </div>
 

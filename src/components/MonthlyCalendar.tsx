@@ -1,7 +1,9 @@
 import { useMemo, useState, useEffect, useCallback } from "react";
-import type { Todo } from "../types";
+import type { AddPayload, Todo } from "../types";
 import { parseLocalDateTime, formatLocalDateTime } from "../utils/dates";
 import { haptic, play } from "../utils/sound";
+import TodoEditor from "./TodoEditor";
+// import TodoItem from "./TodoItem";
 
 type Props = {
   todos: Todo[];
@@ -10,6 +12,7 @@ type Props = {
   onToggle?: (id: string, createNext?: boolean | null) => void;
   onRemove?: (id: string) => void;
   onUpdate?: (id: string, patch: Partial<Todo>, toastMsg?: string) => void;
+  onAddTask?: (payload: AddPayload) => void;
 };
 
 function pad(n: number) {
@@ -33,10 +36,20 @@ function monthPreviewSort(a: Todo, b: Todo) {
     return weight[a.priority] - weight[b.priority];
 }
 
-export default function MonthlyCalendar({ todos, initialDate, onOpenTask, onToggle, onRemove, onUpdate }: Props) {
+function toDateTimeLocal(d: Date) {
+  const pad2 = (n: number) => (n < 10 ? `0${n}` : `${n}`);
+  const yyyy = d.getFullYear();
+  const mm = pad2(d.getMonth() + 1);
+  const dd = pad2(d.getDate());
+  const hh = pad2(d.getHours());
+  const min = pad2(d.getMinutes());
+  return `${yyyy}-${mm}-${dd}T${hh}:${min}`;
+}
+
+export default function MonthlyCalendar({ todos, initialDate, onAddTask, onOpenTask, onRemove, onToggle, onUpdate }: Props) {
   const today = useMemo(() => {
     const t = new Date();
-    t.setHours(0,0,0,0);
+    t.setHours(0, 0, 0, 0);
     return t;
   }, []);
 
@@ -51,6 +64,7 @@ export default function MonthlyCalendar({ todos, initialDate, onOpenTask, onTogg
 
   // selected day key (YYYY-MM-DD) - default today
   const [selectedKey, setSelectedKey] = useState<string>(() => dateKey(today));
+  const [showInlineAdd, setShowInlineAdd] = useState(false);
 
   const prevMonth = useCallback(() => {
     setMonthDate(m => new Date(m.getFullYear(), m.getMonth() - 1, 1));
@@ -151,7 +165,7 @@ export default function MonthlyCalendar({ todos, initialDate, onOpenTask, onTogg
       if (!t.due) continue;
       const pd = parseLocalDateTime(t.due);
       if (!pd) continue;
-      pd.setHours(0,0,0,0);
+      pd.setHours(0, 0, 0, 0);
       const k = dateKey(pd);
       const arr = map.get(k) ?? [];
       arr.push(t);
@@ -162,12 +176,84 @@ export default function MonthlyCalendar({ todos, initialDate, onOpenTask, onTogg
 
   const tasksForSelected = todosByDay.get(selectedKey) ?? [];
 
+  useEffect(() => {
+    setShowInlineAdd(false);
+  }, [selectedKey, monthDate]);
+
+  useEffect(() => {
+    if (!showInlineAdd) return;
+
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "Escape") {
+        e.preventDefault();
+        setShowInlineAdd(false);
+        play("click", false);
+        haptic(20);
+      }
+    }
+
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [showInlineAdd]);
+
   function goToday() {
     const t = new Date();
     setMonthDate(new Date(t.getFullYear(), t.getMonth(), 1));
     setSelectedKey(dateKey(t));
     play("click", false);
     haptic(20);
+  }
+
+  function handleEditorAdd(payload: AddPayload) {
+    const final: AddPayload = {
+      ...payload,
+      due: 
+        payload.due == null || payload.due === ""
+          ? toDateTimeLocal(new Date(selectedKey))
+          : payload.due,
+    };
+
+    onAddTask?.(final);
+    play("add", false);
+    haptic(20);
+    setShowInlineAdd(false);
+  }
+
+  // subtasks
+  function handleToggleSubtask(todo: Todo, subtaskId: string) {
+    if (!onUpdate) return;
+    const subs = todo.subtasks ?? [];
+    const s = subs.find(x => x.id === subtaskId);
+    const wasDone = !!s?.done;
+
+    const newSubs = subs.map(x => (x.id === subtaskId ? { ...x, done: !x.done } : x));
+
+    onUpdate(todo.id, { subtasks: newSubs }, !wasDone ? "Subtask marked done" : "Subtask marked not done");
+
+    const allDone = newSubs.length > 0 && newSubs.every(x => !!x.done);
+    const toggled = newSubs.find(x => x.id === subtaskId);
+
+    if (allDone && !todo.done) {
+      if (todo.recurrence) {
+        onUpdate(todo.id, { subtasks: newSubs, done: true }, "All subtasks marked done, task marked done");
+        play("done", true);
+      } else {
+        onToggle?.(todo.id);
+        play("done", true);
+      }
+      return;
+    }
+
+    // If parent was done but we just unchecked a subtask -> unset parent done
+    if (todo.done && toggled && !toggled.done) {
+      onUpdate(todo.id, { done: false, subtasks: newSubs }, "Subtask marked not done");
+      play("undo", true);
+      return;
+    }
+
+    // simple feedback sound
+    if (toggled?.done) play("done", true);
+    else play("undo", true);
   }
 
   return (
@@ -366,14 +452,66 @@ export default function MonthlyCalendar({ todos, initialDate, onOpenTask, onTogg
 
       {/* Bottom: Day tasks list */}
       <div className="monthly-bottom" style={{ borderTop: "1px solid var(--app-border)", paddingTop: 8, marginTop: 4, display: "flex", flexDirection: "column", gap: 8 }}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+        <div 
+          style={{
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "center",
+            gap: 12,
+          }}
+        >
           <div style={{ fontWeight: 600 }}>
-            {new Date(selectedKey).toLocaleDateString(undefined, { weekday: "long", month: "short", day: "numeric", year: "numeric" })}
+            {new Date(selectedKey).toLocaleDateString(undefined, {
+              weekday: "long",
+              month: "short",
+              day: "numeric",
+              year: "numeric",
+            })}
           </div>
-          <div style={{ color: "var(--app-muted)", fontSize: 13 }}>
-            {tasksForSelected.length} {tasksForSelected.length === 1 ? "task" : "tasks"}
+
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 8,
+              color: "var(--app-muted)",
+              fontSize: 13,
+            }}
+          >
+            <span>
+              {tasksForSelected.length}{" "}
+              {tasksForSelected.length === 1 ? "task" : "tasks"}
+            </span>
+
+            <button
+              className="btn-plain"
+              aria-label={showInlineAdd ? "Cancel add task" : "Add task for this day"}
+              onClick={() => {
+                setShowInlineAdd(v => !v);
+                play("click", false);
+                haptic(20);
+              }}
+              style={{
+                padding: "2px 10px",
+                borderRadius: 999,
+                border: "1px solid var(--app-border)",
+                background: "var(--app-card)",
+                fontSize: 14,
+                lineHeight: 1,
+              }}
+            >
+              {showInlineAdd ? "Cancel" : "+"}
+            </button>
           </div>
         </div>
+
+        {/* Inline add */}
+        {showInlineAdd && (
+          <TodoEditor
+            initialDue={toDateTimeLocal (new Date(selectedKey))}
+            onAdd={(payload) => handleEditorAdd(payload)}
+          />
+        )}
 
         {tasksForSelected.length === 0 ? (
           <div className="text-center text-slate-400">No tasks for this day</div>
@@ -381,20 +519,134 @@ export default function MonthlyCalendar({ todos, initialDate, onOpenTask, onTogg
           <ul style={{ display: "flex", flexDirection: "column", gap: 8, listStyle: "none", padding: 0, margin: 0 }}>
             {tasksForSelected.map(t => {
               const pd = t.due ? parseLocalDateTime(t.due) : null;
+              const subs = t.subtasks ?? [];
+              const subsTotal = subs.length;
+              const doneSubs = t.done ? subsTotal : subs.filter(s => s.done).length;
+              const progressPct = subsTotal === 0 ? 0 : Math.round((doneSubs / subsTotal) * 100);
+
               return (
-                <li key={t.id} style={{ display: "flex", alignItems: "center", gap: 10, justifyContent: "space-between", borderRadius: 8, padding: "8px 10px", background: "var(--app-card)" }}>
+                <li key={t.id} style={{ display: "flex", alignItems: "flex-start", gap: 10, justifyContent: "space-between", borderRadius: 8, padding: "8px 10px", background: "var(--app-card)" }}>
                   <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                    <input aria-label={`Toggle ${t.text}`} type="checkbox" checked={!!t.done} onChange={() => onToggle?.(t.id)} />
-                    <div style={{ display: "flex", flexDirection: "column" }}>
+                    <input
+                      aria-label={`Toggle ${t.text}`}
+                      type="checkbox"
+                      checked={!!t.done}
+                      onChange={() => {
+
+                        if(t.recurrence) {
+                          if(onUpdate && t.subtasks?.length) {
+                            const allDoneSubs = t.subtasks.map(s => ({ ...s, done: true }));
+                            onUpdate(t.id, { subtasks: allDoneSubs });
+                          }
+
+                          onToggle?.(t.id, null);
+                          return;
+                        }
+                        if (!onUpdate || !t.subtasks || t.subtasks.length === 0) {
+                          onToggle?.(t.id);
+                          return;
+                        }
+
+                        const subs = t.subtasks;
+
+                        if (!t.done) {
+                          const newSubs = subs.map(s => ({ ...s, done: true }));
+
+                          onUpdate(
+                            t.id,
+                            { done: true, subtasks: newSubs },
+                            "Yayyyyy lesgoooo task completed weeeee 🎉"
+                          );
+                          play("celebrate", true);
+                          haptic([50, 30, 50]);
+                        } else {
+                          const newSubs = subs.map(s => 
+                            s.done ? s : { ...s, done: false }
+                          );
+                          
+                          onUpdate(
+                            t.id,
+                            { done: false, subtasks: newSubs },
+                            "Task marked not done"
+                          );
+                          play("undo", true);
+                        }
+                      }}
+                    />
+                    
+                    <div style={{ display: "flex", flexDirection: "column", flex: 1 }}>
                       <button className="btn-plain" onClick={() => onOpenTask?.(t.id)} style={{ textAlign: "left", padding: 0 }}>
                         <div className={t.done ? "mc-task-done" : `prio-${t.priority}` } style={{ fontWeight: 600 }}>{t.text}</div>
                       </button>
+
+                      {/* Tags */}
+                      {t.tags && t.tags.length > 0 && (
+                        <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 6 }}>
+                          {t.tags.map(tag => (
+                            <span key={tag} className="tag" style={{ fontSize: 12 }}>{tag}</span>
+                          ))}
+                        </div>
+                      )}
+
                       <div style={{ fontSize: 12, color: "var(--app-muted)" }}>{pd ? formatLocalDateTime(t.due!) : ""}</div>
+
+                      {/* Subtasks progress bar */}
+                      {subsTotal > 0 && (
+                        <div
+                          style={{
+                            display: "flex",
+                            alignItems: "center",
+                            gap: 8,
+                            marginTop: 8,
+                            width: "100%",
+                          }}
+                        >
+                          <div
+                            className={`subtasks-progress ${t.done ? "todo-done" : ""}`}
+                            style={{ flex: 1 }}
+                            role="progressbar"
+                            aria-valuemin={0}
+                            aria-valuemax={100}
+                            aria-valuenow={progressPct}
+                          >
+                            <div
+                              className="subtasks-progress-fill"
+                              style={{ width: `${progressPct}%` }}
+                            />
+                          </div>
+
+                          <div style={{ fontSize: 12, color: "var(--app-muted)", whiteSpace: "nowrap" }}>
+                            {doneSubs}/{subsTotal} · {progressPct}%
+                          </div>
+                        </div>
+                      )}
                     </div>
                   </div>
 
+                  {/* Subtasks */}
+                  {t.subtasks && t.subtasks.length > 0 && (
+                    <div style={{ marginLeft: 32, display: "flex", flexDirection: "column", gap: 6, minWidth: 100 }}>
+                      {t.subtasks.map(s => (
+                        <div key={s.id} style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                          <input
+                            type="checkbox"
+                            checked={!!s.done}
+                            aria-label={`Toggle subtask ${s.text}`}
+                            onChange={() => handleToggleSubtask(t, s.id)}
+                          />
+                          <div
+                            className={`subtask-title ${
+                              s.priority ? `prio-${s.priority}` : `prio-${t.priority}`
+                            } ${s.done ? "subtask-done" : ""}`}
+                          >
+                            {s.text}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
                   <div style={{ display: "flex", gap: 8 }}>
-                    <button className="btn-plain" onClick={() => onUpdate?.(t.id, { done: !t.done }, t.done ? "Marked not done" : "Marked done")}>Toggle</button>
                     <button className="btn-danger" onClick={() => onRemove?.(t.id)}>Delete</button>
                   </div>
                 </li>
