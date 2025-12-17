@@ -1337,3 +1337,28 @@ kbd.help-kbd, .help-kbd kbd {
   font-weight: 500;
   color: var(--app-muted);
 }
+
+.monthly-calendar .mc-day {
+  transition: box-shadow .12s ease, transform .12s ease;
+}
+.monthly-calendar .mc-day:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 8px 20px rgba(2, 6, 23, 0.06);
+}
+.monthly-calendar .mc-today {
+  outline: 1px dashed var(--app-accent, var(--app-border));
+}
+.monthly-calendar .mc-selected {
+  box-shadow: inset 0 0 0 1px var(--app-accent, var(--app-border));
+}
+
+.btn-plain[aria-pressed="true"] {
+  background: var(--app-card);
+  border: 1px solid var(--app-border);
+  box-shadow: 0 6px 16px rgba(2, 6, 23, 0.04);
+}
+
+.mc-task-done {
+  color: var(--app-muted);
+  text-decoration: line-through;
+}

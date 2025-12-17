@@ -4,6 +4,7 @@ import { useTodos } from "../hooks/useTodos";
 import AnnualCalendar, { type ImperativeCalendarHandle } from "./AnnualCalendar";
 import CelebrateOverlay from "./CelebrationOverlay";
 import HelpButton from "./HelpButton";
+import MonthlyCalendar from "./MonthlyCalendar";
 import ReminderManager from "./ReminderManager";
 import TodoEditor from "./TodoEditor";
 import TodoList from "./TodoList";
@@ -29,7 +30,7 @@ export default function App() {
 
   const [selectedId, setSelectedId] = useState<string | null>(null);
 
-  const [view, setView] = useState<"list" | "year">("list");
+  const [view, setView] = useState<"list" | "year" | "month">("list");
   
   const [filter, setFilter] = useState<"all" | "active" | "completed">("all");
   const [query, setQuery] = useState("");
@@ -133,8 +134,27 @@ export default function App() {
     }, ms);
   }, []);
 
+  const handleToggleWithFeedback = useCallback(
+    (id: string, createNext?: boolean | null) => {
+      const t = todos.find(x => x.id === id);
+      const wasDone = !!t?.done;
+
+      toggle(id, createNext);
+
+      if (!wasDone) {
+        play("celebrate", true);
+        haptic([50, 30, 50]);
+        showToast("Yayyyyy lesgoooo task completed weeeee 🎉", 1400);
+      } else {
+        play("click", false);
+        showToast("Marked as not done", 900);
+      }
+    },
+    [todos, toggle, showToast]
+  );
+
   const cardRef = useRef<HTMLDivElement | null>(null);
-  const viewRef = useRef<"list" | "year">(view);
+  const viewRef = useRef<"list" | "year" | "month">(view);
   useEffect(() => {
     viewRef.current = view;
   }, [view]);
@@ -183,7 +203,6 @@ export default function App() {
       viewSwipeLockedRef.current = true;
       viewDraggingRef.current = false;
       viewDragStartX.current = null;
-      viewDragStartY.current = null;
       setViewDragX(0);
       try { (e.target as Element).releasePointerCapture?.(e.pointerId); } catch {/* empty */}
       return;
@@ -228,15 +247,27 @@ export default function App() {
       return;
     }
 
+    if (viewRef.current === "list" && dx >= VIEW_SWIPE_THRESHOLD) {
+      setViewWithFeedback("month");
+      setViewDragX(0);
+      return;
+    }
+
+    if (viewRef.current === "month" && dx <= -VIEW_SWIPE_THRESHOLD) {
+      setViewWithFeedback("list");
+      setViewDragX(0);
+      return;
+    }
+
     // if movement not enough, return to original position, and do nothing
     setViewDragX(0);
   }
 
-  const setViewWithFeedback = useCallback((v:  "list" | "year") => {
+  const setViewWithFeedback = useCallback((v:  "list" | "year" | "month") => {
     setView(v);
     play("click", false);
     try {haptic(25);} catch {/* empty */}
-    showToast(v === "year" ? "Year view" : "List view", 700);
+    showToast(v === "year" ? "Year view" : v === "month" ? "Month view" : "List view", 700);
   }, [showToast])
 
   useEffect(() => {
@@ -287,6 +318,18 @@ export default function App() {
       return next;
     });
   }, [showToast]);
+
+  // Add tasks directly from monthly calendar view
+  const [showAddModal, setShowAddModal] = useState(false);
+  const [addModalDate, setAddModalDate] = useState<Date | null>(null);
+
+  function toDateTimeLocal(d: Date) {
+    const pad = (n: number) => (n < 10 ? `0${n}` : `${n}`);
+    const now = new Date();
+    const hh = pad(now.getHours());
+    const mm = pad(now.getMinutes());
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${hh}:${mm}`;
+  }
 
   const setFilterWithFeedback = useCallback((f: "all" | "active" | "completed") => {
     setFilter(f);
@@ -536,6 +579,39 @@ export default function App() {
               </button>
             </div>
 
+            {/* VIEW TOGGLE */}
+            <div style={{ display: "flex", gap: 8, alignItems: "center", marginLeft: 6}}>
+              <button 
+                className="btn-plain"
+                onClick={() => setViewWithFeedback("list")}
+                aria-pressed={view === "list"}
+                title="List view"
+                style={{ padding: "6px 10px" }}
+              >
+                List
+              </button>
+
+              <button
+                className="btn-plain"
+                onClick={() => setViewWithFeedback("year")}
+                aria-pressed={view === "year"}
+                title="Year view"
+                style={{ padding: "6px 10px" }}
+              >
+                Year
+              </button>
+
+              <button
+                className="btn-plain"
+                onClick={() => setViewWithFeedback("month")}
+                aria-pressed={view === "month"}
+                title="Month"
+                style={{ padding: "6px 10px"}}
+              >
+                Month
+              </button>
+            </div>
+
             {/* View swipe */}
             <div
               className={`view-swipe-hint ${viewDragX < 0 ? "to-year" : viewDragX > 0 ? "to-list" : ""}`}
@@ -617,6 +693,63 @@ export default function App() {
           setView={setViewWithFeedback}
         />
 
+        {showAddModal && (
+          <div
+            className="modal-overlay"
+            onClick={() => setShowAddModal(false)}
+            style={{
+              position: "fixed",
+              inset: 0,
+              zIndex: 3000,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              background: "var(--app-card)",
+              padding: 16,
+            }}
+          >
+            <div
+              role="dialog"
+              aria-modal="true"
+              onClick={(e) => e.stopPropagation()}
+              style={{
+                width: "min(760px, 96%)",
+                borderRadius: 12,
+                padding: 16,
+                background: "var(--app-card)",
+                border: "1px solid var(--app-border)",
+                boxShadow: "0 12px 40px rgba(2, 6, 23, 0.12)",
+              }}
+            >
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+                <div style={{ fontWeight: 700 }}>
+                  Add task - {addModalDate ? addModalDate.toLocaleDateString() : ""}
+                </div>
+                <div>
+                  <button className="btn-plain" onClick={() => { setShowAddModal(false); }}>
+                    ✕
+                  </button>
+                  </div>
+              </div>
+
+              <TodoEditor
+                initialDue={addModalDate ? toDateTimeLocal(addModalDate) : undefined}
+                onAdd={(payload) => {
+                  add(payload);
+                  play("add", false);
+                  showToast("Task added", 900);
+                  setShowAddModal(false);
+                  setAddModalDate(null);
+                }}
+              />
+
+              <div style={{ textAlign: "right", marginTop: 8 }}>
+                <button className="btn-plain" onClick={() => setShowAddModal(false)}>Cancel</button>
+              </div>
+            </div>
+          </div>
+        )}
+
         <main>
           {view === "list" ? (
             <TodoList
@@ -625,20 +758,7 @@ export default function App() {
               selectedId={selectedId}
               setSelectedId={setSelectedId}
               showToast={showToast}
-              onToggle={(id: string, createNext?: boolean | null) => {
-                const t = todos.find(x => x.id === id);
-                const wasDone = !!t?.done;
-                toggle(id, createNext);
-                
-                if (!wasDone) {
-                  play("celebrate", true);
-                  haptic([50, 30, 50]);
-                  showToast("Yayyyyy lesgoooo task completed weeeee 🎉", 1400);
-                } else {
-                  play("click", false);
-                  showToast("Marked as not done", 900)
-                }
-              }}
+              onToggle={handleToggleWithFeedback}
               onRemove={id => {
                 setSelectedId(prev => (prev === id ? null : prev));
                 remove(id);
@@ -651,19 +771,45 @@ export default function App() {
                 showToast(toastMsg ?? "Saved", 800);
               }}
             />
-            ) : (
-              <AnnualCalendar
-                ref={calRef}
-                todos={todos}
-                onOpenTask={(id) => {
-                  setViewWithFeedback("list");
-                  setSelectedId(id);
-                  showToast("Opened task in list", 800);
-                }}
-              />
-            )}
+          ) : view === "year" ? (
+            <AnnualCalendar
+              ref={calRef}
+              todos={todos}
+              onOpenTask={(id) => {
+                setViewWithFeedback("list");
+                setSelectedId(id);
+                showToast("Opened task in list", 800);
+              }}
+            />
+          ) : (
+            <MonthlyCalendar
+              todos={todos}
+              onAddTask={(payload) => {
+                add(payload);
+                play("add", false);
+                showToast("Task added", 900);
+              }}
+              onOpenTask={(id) => {
+                // reuse same behavior as annual calendar -> open list + focus task
+                setViewWithFeedback("list");
+                setSelectedId(id);
+                showToast("Opened task in list", 800);
+              }}
+              onToggle={handleToggleWithFeedback}
+              onRemove={(id) => {
+                remove(id);
+                play("delete", true);
+                showToast("Deleted", 900);
+              }}
+              onUpdate={(id, patch, toastMsg) => {
+                update(id, patch);
+                play("click", false);
+                showToast(toastMsg ?? "Saved", 800);
+              }}
+            />
+          )}
         </main>
-
+        
         <footer className="mt-6 flex items-center justify-between text-sm text-app-muted">
           <div>{stats.total} {stats.total === 1 ? "item" : "items"}</div>
           <div> Have a nice day :)</div>
@@ -682,7 +828,7 @@ export default function App() {
               reindeer
             </a>
           </div>
-          <div> Version 2.1.4</div>
+          <div> Version 2.2.4</div>
         </footer>
       </div>
 

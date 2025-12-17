@@ -1,22 +1,21 @@
-import { useState } from "react";
-import type { Recurrence } from "../types";
+import { useEffect, useState } from "react";
+import type { AddPayload, Recurrence } from "../types";
 import { play } from "../utils/sound";
 
 type Props = {
-  onAdd: (payload: {
-    text: string;
-    tags?: string[];
-    due?: string | null;
-    priority?: "high" | "medium" | "low";
-    recurrence?: Recurrence | null;
-    reminders?: number[]; // minutes before due
-  }) => void;
+  onAdd: (payload :AddPayload) => void;
+  initialDue?: string;
 };
 
-export default function TodoEditor({ onAdd }: Props) {
+export default function TodoEditor({ onAdd, initialDue }: Props) {
   const [text, setText] = useState("");
   const [tags, setTags] = useState("");
-  const [due, setDue] = useState(""); // datetime-local string
+
+  const [due, setDue] = useState<string>(() => initialDue ?? "");
+  useEffect(() => {
+    setDue(initialDue ?? "");
+  }, [initialDue])
+
   const [priority, setPriority] = useState<"high" | "medium" | "low">("medium");
 
   // recurrence UI state

@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import type { Todo, Priority, Recurrence, Subtask } from "../types";
 import { formatLocalDateTime, parseLocalDateTime } from "../utils/dates";
 import { play } from "../utils/sound";
+import { useRecurringHandlers } from "../hooks/useRecurringHandlers";
 
 type Props = {
   index?: number;
@@ -64,9 +65,9 @@ export default function TodoItem({ index, todo, onToggle, onRemove, onUpdate, is
   const [subtaskReminders, setSubtaskReminders] = useState<number[]>([]);
   const [subtasksLocal, setSubtasksLocal] = useState<Subtask[]>(todo.subtasks ?? []);
 
-  const originalSubtasksRef = useRef<Subtask[] | null>(null);
-  const originalDoneRef = useRef<boolean | null>(null);
-  const provisionalRef = useRef(false);
+  const recurring = useRecurringHandlers({todo, onToggle, onUpdate, play, showToast});
+  const isProvisional = recurring.confirmOpen;
+  
   const [forceParentUndone, setForceParentUndone] = useState(false);
 
   const cleanedSubtasks = subtasksLocal;
@@ -290,7 +291,6 @@ export default function TodoItem({ index, todo, onToggle, onRemove, onUpdate, is
     });
 
     setForceParentUndone(false);
-    originalSubtasksRef.current = null;
 
     setEditing(false);
     play("click");
@@ -298,58 +298,10 @@ export default function TodoItem({ index, todo, onToggle, onRemove, onUpdate, is
 
   // when user clicks checkbox
   function handleCheckboxClick() {
+    if (isProvisional) return;
+
     // If toggling from done -> undone, just toggle (no confirm)
-    if (todo.done) {
-      onToggle(todo.id);
-      play("undo", true);
-      return;
-    }
-
-    // If non-recurring, simply toggle; if recurring, show inline confirm
-    if (!todo.recurrence) {
-      const wasDone = todo.done;
-      onToggle(todo.id);
-      if (!wasDone) {
-        play("done", true);
-        if (showToast) showToast("Yayyyyy lesgoooo task completed weeeee 🎉", 1400);
-      } else {
-        play("done", true);
-        if (showToast) showToast("Marked done", 900);
-      }
-      return;
-    }
-
-    // show inline confirm to let user choose
-    originalSubtasksRef.current = (todo.subtasks ?? []).map(s => ({ ...s }));
-    originalDoneRef.current = !!todo.done;
-    provisionalRef.current = true;
-    setConfirmOpen(true);
-
-    if ((todo.subtasks ?? []).length) {
-      const allDoneSubs = (todo.subtasks ?? []).map(s => ({ ...s, done: true }));
-      onUpdate(todo.id, { subtasks: allDoneSubs }, "Subtasks marked done");
-    }
-  }
-
-  function restoreAndCancelConfirm() {
-    if (provisionalRef.current) {
-      onUpdate(todo.id, {
-        subtasks: originalSubtasksRef.current ?? undefined,
-        done: originalDoneRef.current ?? false,
-      }, "Cancelled, subtasks restored");
-    } else if (originalSubtasksRef.current || originalDoneRef.current !== null) {
-      onUpdate(todo.id, {
-        subtasks: originalSubtasksRef.current ?? undefined,
-        done: originalDoneRef.current ?? false,
-      }, "Cancelled, subtasks restored");
-    }
-
-    originalSubtasksRef.current = null;
-    originalDoneRef.current = null;
-    provisionalRef.current = false;
-
-    setConfirmOpen(false);
-    play("click");
+    recurring.handleToggleFromView();
   }
 
   function handleDeleteClick() {
@@ -471,10 +423,16 @@ export default function TodoItem({ index, todo, onToggle, onRemove, onUpdate, is
 
   // Keyboard handler for the root (when focused)
   function handleRootKeyDown(e: React.KeyboardEvent) {
+    const key = e.key;
+    if (!isProvisional) {
+      if (key !== "Escape") {
+        e.preventDefault();
+        return;
+      }
+    }
     const target = e.target as HTMLElement | null;
     if (target && (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable)) return;
 
-    const key = e.key;
     if (key === "e") {
       // enters edit mode
       if (!editing) {
@@ -524,7 +482,7 @@ export default function TodoItem({ index, todo, onToggle, onRemove, onUpdate, is
       } else if (confirmOpen) {
         // cancels confirm
         e.preventDefault();
-        restoreAndCancelConfirm();
+        recurring.restoreAndCancelConfirm();
       }
       return;
     }
@@ -603,6 +561,8 @@ export default function TodoItem({ index, todo, onToggle, onRemove, onUpdate, is
 
     if (swipeRight) {
       // perform the toggle: if undone, mark done, if done, mark undone
+
+      if (isProvisional) return;
       
       // if non-recurring, simply toggle
       // if recurring, allow user to mark done permanently, or create next instance
@@ -626,14 +586,7 @@ export default function TodoItem({ index, todo, onToggle, onRemove, onUpdate, is
         return;
       }
 
-      originalSubtasksRef.current = (todo.subtasks ?? []).map(s => ({ ...s }));
-      originalDoneRef.current = !!todo.done;
-      setConfirmOpen(true);
-
-      if (((todo.subtasks ?? []).length)) {
-        const allDoneSubs = (todo.subtasks ?? []).map(s => ({ ...s, done: true }));
-        onUpdate(todo.id, { subtasks: allDoneSubs }, "Subtasks marked done");
-      }
+      recurring.openRecurringConfirmAndMarkSubs();
     }
 
     if (swipeLeft) {
@@ -643,6 +596,7 @@ export default function TodoItem({ index, todo, onToggle, onRemove, onUpdate, is
   }
 
   function triggerLongPressEdit() {
+    if (isProvisional) return;
     setEditing(true);
     setDraft({ text: todo.text, due: todo.due ?? "", tags: todo.tags.join(", "), priority: todo.priority, reminders: todo.reminders ?? [], notes: todo.notes ?? "" });
     setSubtasksLocal(todo.subtasks ?? []);
@@ -844,7 +798,7 @@ export default function TodoItem({ index, todo, onToggle, onRemove, onUpdate, is
                 </div>
                 
                 {todo.subtasks.map(s => {
-                  const parentDone = forceParentUndone ? false : !!todo.done;
+                  const parentDone = isProvisional ? true : todo.done;
                   const subDone = !!s.done || parentDone;
                   return (
                     <div key={s.id} style={{ display: "flex", gap: 8, alignItems: "center", justifyContent: "space-between" }}>
@@ -852,7 +806,10 @@ export default function TodoItem({ index, todo, onToggle, onRemove, onUpdate, is
                         <input
                           type="checkbox"
                           checked={subDone}
-                          onChange={() => toggleSubtaskDone(s.id)}
+                          onChange={() => {
+                            if (isProvisional) return;
+                            toggleSubtaskDone(s.id);
+                          }}
                           aria-label={`Toggle subtask ${s.text}`}
                         />
                         <div style={{ minWidth: 0, display: "flex", flexDirection: "column", gap: 4 }}>
@@ -913,20 +870,12 @@ export default function TodoItem({ index, todo, onToggle, onRemove, onUpdate, is
             )}
 
             {/* inline confirm UI (visible when user checks recurring todo) */}
-            {confirmOpen && (
-              <div style={{ marginTop: 8, display: "flex", gap: 8 }}>
-                <button className="btn-plain" onClick={() => { setConfirmOpen(false); provisionalRef.current = false; originalSubtasksRef.current = null; originalDoneRef.current = null; onToggle(todo.id, true); play("done", true); }}>
-                  Create next
-                </button>
-                <button className="btn-plain" onClick={() => { setConfirmOpen(false); provisionalRef.current = false; originalSubtasksRef.current = null; originalDoneRef.current = null; onToggle(todo.id, false); play("done", true); }}>
-                  Mark done permanently
-                </button>
-                <button
-                  className="btn-plain"
-                  onClick={restoreAndCancelConfirm}>
-                  Cancel
-                </button>
-              </div>
+            {recurring.confirmOpen && (
+                <div style={{ marginTop: 8, display: "flex", gap: 8 }}>
+                  <button className="btn-plain" onClick={recurring.confirmCreateNext}>Create next</button>
+                  <button className="btn-plain" onClick={recurring.confirmMarkDonePermanently}>Mark done permanently</button>
+                  <button className="btn-plain" onClick={recurring.restoreAndCancelConfirm}>Cancel</button>
+                </div>
             )}
 
             {/* EXPIRED PROMPT: show only when expired & not done */}
