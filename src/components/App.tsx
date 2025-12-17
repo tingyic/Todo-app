@@ -828,7 +828,7 @@ export default function App() {
               reindeer
             </a>
           </div>
-          <div> Version 2.2.4</div>
+          <div> Version 2.2.5</div>
         </footer>
       </div>
 

@@ -91,6 +91,18 @@ function buildIndicatorsForList(list: Todo[]) {
   return result.slice(0, slotsTotal);
 }
 
+function getSubtaskProgress(todo: Todo) {
+  const subs = todo.subtasks ?? [];
+  if (subs.length === 0) return;
+
+  const doneCount = todo.done
+    ? subs.length
+    : subs.filter(s => s.done).length;
+
+  const pct = Math.round((doneCount / subs.length) * 100);
+  return { doneCount, total: subs.length, pct };
+}
+
 const AnnualCalendar = forwardRef<ImperativeCalendarHandle, Props>(({ year, todos, onOpenTask }, ref) => {
   const now = useMemo(() => new Date(), []);
   const LOWER_YEAR = 1900;
@@ -182,6 +194,22 @@ useEffect(() => {
   window.addEventListener("keydown", onPopupKey);
   return () => window.removeEventListener("keydown", onPopupKey);
 }, [selectedDay, changeSelectedDayBy]);
+
+useEffect(() => {
+  if (!selectedDay) return;
+
+  function onEscape(e: KeyboardEvent) {
+    if (e.key === "Escape") {
+      e.preventDefault();
+      e.stopPropagation();
+      play("click", false);
+      setSelectedDay(null);
+    }
+  }
+
+  window.addEventListener("keydown", onEscape);
+  return () => window.removeEventListener("keydown", onEscape);
+}, [selectedDay]);
 
   const openDay = (key: string, date: Date) => {
     play("click", false);
@@ -423,53 +451,137 @@ useEffect(() => {
       </div>
 
       {/* day details popup */}
-      {selectedDay && (
-        <div className="calendar-day-popup" role="dialog" aria-modal="true" onClick={closeDay}>
-          <div className="calendar-day-panel" onClick={(e) => e.stopPropagation()}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-              <div style={{ fontWeight: 700 }}>{selectedDay.date.toLocaleDateString()}</div>
-              <button 
-                className="btn-plain" 
-                onClick={() => {
-                  closeDay();
-                  play("click", false);
+        {selectedDay && (
+          <div className="calendar-day-popup" onClick={closeDay}>
+            <div
+              className="calendar-day-panel"
+              onClick={e => e.stopPropagation()}
+            >
+              {/* Header */}
+              <div
+                style={{
+                  display: "flex",
+                  justifyContent: "space-between",
+                  alignItems: "center",
+                  marginBottom: 10
                 }}
               >
-                Close
-              </button>
-            </div>
+                <div style={{ fontWeight: 700}}>
+                  {selectedDay.date.toLocaleDateString()}
+                </div>
+                <button
+                  className="btn-plain"
+                  onClick={() => {
+                    play("click", false);
+                    closeDay();
+                  }}
+                >
+                  Close
+                </button>
+              </div>
 
-            <div style={{ marginTop: 10 }}>
               {(byDate.get(selectedDay.key) ?? []).length === 0 ? (
                 <div style={{ color: "var(--app-muted)" }}>No tasks for this day</div>
               ) : (
-                (byDate.get(selectedDay.key) ?? []).map(t => (
-                  <div
-                    key={t.id}
-                    className={`snooze-card ${t.done ? "task-completed" : ""}`}
-                    style={{ marginTop: 8, padding: 8, cursor: "pointer" }}
-                    onClick={() => { 
-                      play("click", false);
-                      haptic(25);
-                      onOpenTask?.(t.id); 
-                      closeDay(); 
-                    }}
-                  >
-                    <div style={{ fontWeight: 700 }} className={t.done ? "prio-completed" : `prio-${t.priority}`}>
+                (byDate.get(selectedDay.key) ?? []).map(t => {
+                  const progress = getSubtaskProgress(t);
+
+                  return (
+                    <div
+                      key={t.id}
+                      className={`snooze-card ${t.done ? "task-completed" : ""}`}
+                      onClick={() => {
+                        play("click", false);
+                        haptic(25);
+                        onOpenTask?.(t.id);
+                        closeDay();
+                      }}
+                    >
+                      {/* Title */}
+                      <div
+                        className={
+                          t.done
+                            ? "prio-completed"
+                            : `prio-${t.priority}`
+                        }
+                        style={{ fontWeight: 700 }}
+                      >
                       {t.text}
                     </div>
-                    <div style={{ color: "var(--app-muted)", fontSize: 12, marginTop: 6 }}>
-                      {t.due ? formatLocalDateTime(t.due) : new Date(t.createdAt).toLocaleString()}
-                    </div>
+
+                    {/* Tags and deadline */}
+                    <div
+                      style={{
+                        fontSize: 12,
+                        color: "var(--app-muted)",
+                        marginTop: 4
+                      }}
+                    >
+                      {t.tags?.length ? t.tags.join(", ") : "No tags"}
+                      {" · "}
+                      {t.due
+                        ? formatLocalDateTime(t.due)
+                        : new Date(t.createdAt).toLocaleString()}
+                      </div>
+
+                    {/* Subtask progress */}
+                    {progress && (
+                      <div style={{ marginTop: 10 }}>
+                        <div
+                          className={`subtasks-progress ${t.done ? "todo-done" : ""}`}
+                          role="progressbar"
+                          aria-valuenow={progress.pct}
+                          style={{ height: 6 }}
+                        >
+                          <div
+                            className="subtasks-progress-fill"
+                            style={{ width: `${progress.pct}%` }}
+                          />
+                        </div>
+
+                        <div style={{ fontSize: 12, color: "var(--app-muted)", marginTop: 4 }}>
+                          {progress.doneCount}/{progress.total} · {progress.pct}%
+                        </div>
+
+                        {/* Subtasks list */}
+                        <div style={{ marginTop: 6, display: "flex", flexDirection: "column", gap: 4 }}>
+                          {t.subtasks!.map(s => (
+                            <div
+                              key={s.id}
+                              className={
+                                s.done || t.done
+                                  ? "subtask-done"
+                                  : `prio-${s.priority}`
+                              }
+                              style={{ fontSize: 13 }}
+                            >
+                              • {s.text}
+                              {s.due && (
+                                <span
+                                  style={{
+                                    marginLeft: 6,
+                                    color: "var(--app-muted)",
+                                    fontSize: 11
+                                  }}
+                                >
+                                  · {formatLocalDateTime(s.due)}
+                                </span>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
                   </div>
-                ))
-              )}
-            </div>
+                );
+              })
+            )}
           </div>
         </div>
       )}
-    </div>
-  );
-});
+      </div>
+    );
+  }
+);
 
 export default AnnualCalendar;
