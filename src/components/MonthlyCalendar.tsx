@@ -1,9 +1,9 @@
 import { useMemo, useState, useEffect, useCallback } from "react";
 import type { AddPayload, Todo } from "../types";
+import { useRecurringHandlers } from "../hooks/useRecurringHandlers";
 import { parseLocalDateTime, formatLocalDateTime } from "../utils/dates";
 import { haptic, play } from "../utils/sound";
 import TodoEditor from "./TodoEditor";
-// import TodoItem from "./TodoItem";
 
 type Props = {
   todos: Todo[];
@@ -44,6 +44,185 @@ function toDateTimeLocal(d: Date) {
   const hh = pad2(d.getHours());
   const min = pad2(d.getMinutes());
   return `${yyyy}-${mm}-${dd}T${hh}:${min}`;
+}
+
+function MonthlyTaskRow({
+  todo,
+  onToggle,
+  onUpdate,
+  onOpenTask,
+  onRemove,
+}: {
+  todo: Todo;
+  onToggle: (id: string, createNext?: boolean | null) => void;
+  onUpdate: (id: string, patch: Partial<Todo>, toastMsg?: string) => void;
+  onOpenTask?: (id: string) => void;
+  onRemove?: (id: string) => void;
+}) {
+  const recurring = useRecurringHandlers({
+    todo,
+    onToggle,
+    onUpdate,
+    play,
+  });
+
+  const isProvisional = recurring.confirmOpen;
+
+  const pd = todo.due ? parseLocalDateTime(todo.due) : null;
+  const subs = todo.subtasks ?? [];
+  const subsTotal = subs.length;
+  const doneSubs = todo.done ? subsTotal : subs.filter(s => s.done).length;
+  const progressPct = subsTotal === 0 ? 0 : Math.round((doneSubs / subsTotal) * 100);
+
+  function handleCheckboxToggle() {
+    if (todo.done) {
+      recurring.handleToggleFromView();
+      return;
+    }
+
+    if (todo.recurrence) {
+      recurring.handleToggleFromView();
+      return;
+    }
+
+    if (subs.length > 0) {
+      const newSubs = subs.map((s) => ({ ...s, done: true }));
+      onUpdate(todo.id, { done: true, subtasks: newSubs }, "Yayyyyy lesgoooo task completed weeeee 🎉");
+      play("celebrate", true);
+      haptic([50, 30, 50]);
+      return;
+    }
+    recurring.handleToggleFromView();
+  }
+
+  function handleToggleSubtaskLocal(subId: string) {
+    if (!onUpdate) return;
+    const current = todo.subtasks ?? [];
+    const s = current.find (x => x.id === subId);
+    const wasDone = !!s?.done;
+    const newSubs = current.map(x => (x.id === subId ? { ...x, done: !x.done } : x));
+    onUpdate(todo.id, { subtasks: newSubs }, !wasDone ? "Subtask marked done" : "Subtask marked not done");
+
+    const allDone = newSubs.length > 0 && newSubs.every(x => !!x.done);
+    const toggled = newSubs.find(x => x.id === subId);
+
+    if (allDone && !todo.done) {
+      if (todo.recurrence) {
+        onUpdate(todo.id, { subtasks: newSubs, done: true }, "All subtasks marked done, task marked done");
+        play("done", true);
+      } else {
+        onToggle(todo.id);
+        play("done", true);
+      }
+      return;
+    }
+
+    if (todo.done && toggled && !toggled.done) {
+      onUpdate(todo.id, { done: false, subtasks: newSubs }, "Subtask marked not done");
+      play("undo", true);
+      return;
+    }
+
+    if (toggled?.done) play("done", true);
+    else play("undo", true);
+  }
+
+  return (
+    <li
+      style={{
+        position: "relative",
+        display: "flex",
+        alignItems: "flex-start",
+        gap: 10,
+        justifyContent: "space-between",
+        borderRadius: 8,
+        padding: "8px 10px",
+        background: "var(--app-card)",
+      }}
+    >
+      <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+        <input
+          aria-label={`Toggle ${todo.text}`}
+          type="checkbox"
+          checked={!!todo.done || isProvisional}
+          onChange={handleCheckboxToggle}
+        />
+
+        <div style={{ display: "flex", flexDirection: "column", flex: 1 }}>
+          <button
+            className="btn-plain"
+            onClick={() => onOpenTask?.(todo.id)}
+            style={{ textAlign: "left", padding: 0 }}
+          >
+            <div className={todo.done ? "mc-task-done" : `prio-${todo.priority}`} style={{ fontWeight: 600 }}>
+              {todo.text}
+            </div>
+          </button>
+
+          {todo.tags && todo.tags.length > 0 && (
+            <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 6 }}>
+              {todo.tags.map((tag) => (
+                <span key={tag} className="tag" style={{ fontSize: 12 }}>
+                  {tag}
+                </span>
+              ))}
+            </div>
+          )}
+
+          <div style={{ fontSize: 12, color: "var(--app-muted)" }}>{pd ? formatLocalDateTime(todo.due!) : ""}</div>
+
+          {/* Subtasks progress */}
+          {subsTotal > 0 && (
+            <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 8, width: "100%" }}>
+              <div className={`subtasks-progress ${todo.done ? "todo-done" : ""}`} style={{ flex: 1 }}
+                  role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={progressPct}>
+                <div className="subtasks-progress-fill" style={{ width: `${progressPct}%` }} />
+              </div>
+              <div style={{ fontSize: 12, color: "var(--app-muted)", whiteSpace: "nowrap" }}>
+                {doneSubs}/{subsTotal} · {progressPct}%
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Subtasks column */}
+      {todo.subtasks && todo.subtasks.length > 0 && (
+        <div style={{ marginLeft: 32, display: "flex", flexDirection: "column", gap: 6, minWidth: 100 }}>
+          {todo.subtasks.map(s => {
+            const parentDone = isProvisional ? true : todo.done;
+            const subDone = !!s.done || parentDone;
+            return (
+              <div key={s.id} style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                <input
+                  type="checkbox"
+                  checked={subDone}
+                  aria-label={`Toggle subtask ${s.text}`}
+                  onChange={() => (!isProvisional ? handleToggleSubtaskLocal(s.id) : undefined)}
+                />
+                <div className={`subtask-title ${s.priority ? `prio-${s.priority}` : `prio-${todo.priority}`} ${s.done ? "subtask-done" : ""}`}>
+                  {s.text}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+        <button className="btn-danger" onClick={() => onRemove?.(todo.id)}>Delete</button>
+      </div>
+
+      {/* inline confirm for recurring flow */}
+      {recurring.confirmOpen && (
+        <div style={{ position: "absolute", right: 12, top: "100%", marginTop: 8, display: "flex", gap: 8 }}>
+          <button className="btn-plain" onClick={recurring.confirmCreateNext}>Create next</button>
+          <button className="btn-plain" onClick={recurring.confirmMarkDonePermanently}>Mark done permanently</button>
+          <button className="btn-plain" onClick={recurring.restoreAndCancelConfirm}>Cancel</button>
+        </div>
+      )}
+    </li>
+  );
 }
 
 export default function MonthlyCalendar({ todos, initialDate, onAddTask, onOpenTask, onRemove, onToggle, onUpdate }: Props) {
@@ -219,42 +398,8 @@ export default function MonthlyCalendar({ todos, initialDate, onAddTask, onOpenT
     setShowInlineAdd(false);
   }
 
-  // subtasks
-  function handleToggleSubtask(todo: Todo, subtaskId: string) {
-    if (!onUpdate) return;
-    const subs = todo.subtasks ?? [];
-    const s = subs.find(x => x.id === subtaskId);
-    const wasDone = !!s?.done;
-
-    const newSubs = subs.map(x => (x.id === subtaskId ? { ...x, done: !x.done } : x));
-
-    onUpdate(todo.id, { subtasks: newSubs }, !wasDone ? "Subtask marked done" : "Subtask marked not done");
-
-    const allDone = newSubs.length > 0 && newSubs.every(x => !!x.done);
-    const toggled = newSubs.find(x => x.id === subtaskId);
-
-    if (allDone && !todo.done) {
-      if (todo.recurrence) {
-        onUpdate(todo.id, { subtasks: newSubs, done: true }, "All subtasks marked done, task marked done");
-        play("done", true);
-      } else {
-        onToggle?.(todo.id);
-        play("done", true);
-      }
-      return;
-    }
-
-    // If parent was done but we just unchecked a subtask -> unset parent done
-    if (todo.done && toggled && !toggled.done) {
-      onUpdate(todo.id, { done: false, subtasks: newSubs }, "Subtask marked not done");
-      play("undo", true);
-      return;
-    }
-
-    // simple feedback sound
-    if (toggled?.done) play("done", true);
-    else play("undo", true);
-  }
+  const safeToggle = (id: string, createNext?: boolean | null) => onToggle?.(id, createNext);
+  const safeUpdate = (id: string, patch: Partial<Todo>, toastMsg?: string) => onUpdate?.(id, patch, toastMsg);
 
   return (
     <div className="monthly-calendar" style={{ display: "flex", flexDirection: "column", gap: 12 }}>
@@ -517,141 +662,12 @@ export default function MonthlyCalendar({ todos, initialDate, onAddTask, onOpenT
           <div className="text-center text-slate-400">No tasks for this day</div>
         ) : (
           <ul style={{ display: "flex", flexDirection: "column", gap: 8, listStyle: "none", padding: 0, margin: 0 }}>
-            {tasksForSelected.map(t => {
-              const pd = t.due ? parseLocalDateTime(t.due) : null;
-              const subs = t.subtasks ?? [];
-              const subsTotal = subs.length;
-              const doneSubs = t.done ? subsTotal : subs.filter(s => s.done).length;
-              const progressPct = subsTotal === 0 ? 0 : Math.round((doneSubs / subsTotal) * 100);
-
-              return (
-                <li key={t.id} style={{ display: "flex", alignItems: "flex-start", gap: 10, justifyContent: "space-between", borderRadius: 8, padding: "8px 10px", background: "var(--app-card)" }}>
-                  <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                    <input
-                      aria-label={`Toggle ${t.text}`}
-                      type="checkbox"
-                      checked={!!t.done}
-                      onChange={() => {
-
-                        if(t.recurrence) {
-                          if(onUpdate && t.subtasks?.length) {
-                            const allDoneSubs = t.subtasks.map(s => ({ ...s, done: true }));
-                            onUpdate(t.id, { subtasks: allDoneSubs });
-                          }
-
-                          onToggle?.(t.id, null);
-                          return;
-                        }
-                        if (!onUpdate || !t.subtasks || t.subtasks.length === 0) {
-                          onToggle?.(t.id);
-                          return;
-                        }
-
-                        const subs = t.subtasks;
-
-                        if (!t.done) {
-                          const newSubs = subs.map(s => ({ ...s, done: true }));
-
-                          onUpdate(
-                            t.id,
-                            { done: true, subtasks: newSubs },
-                            "Yayyyyy lesgoooo task completed weeeee 🎉"
-                          );
-                          play("celebrate", true);
-                          haptic([50, 30, 50]);
-                        } else {
-                          const newSubs = subs.map(s => 
-                            s.done ? s : { ...s, done: false }
-                          );
-                          
-                          onUpdate(
-                            t.id,
-                            { done: false, subtasks: newSubs },
-                            "Task marked not done"
-                          );
-                          play("undo", true);
-                        }
-                      }}
-                    />
-                    
-                    <div style={{ display: "flex", flexDirection: "column", flex: 1 }}>
-                      <button className="btn-plain" onClick={() => onOpenTask?.(t.id)} style={{ textAlign: "left", padding: 0 }}>
-                        <div className={t.done ? "mc-task-done" : `prio-${t.priority}` } style={{ fontWeight: 600 }}>{t.text}</div>
-                      </button>
-
-                      {/* Tags */}
-                      {t.tags && t.tags.length > 0 && (
-                        <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 6 }}>
-                          {t.tags.map(tag => (
-                            <span key={tag} className="tag" style={{ fontSize: 12 }}>{tag}</span>
-                          ))}
-                        </div>
-                      )}
-
-                      <div style={{ fontSize: 12, color: "var(--app-muted)" }}>{pd ? formatLocalDateTime(t.due!) : ""}</div>
-
-                      {/* Subtasks progress bar */}
-                      {subsTotal > 0 && (
-                        <div
-                          style={{
-                            display: "flex",
-                            alignItems: "center",
-                            gap: 8,
-                            marginTop: 8,
-                            width: "100%",
-                          }}
-                        >
-                          <div
-                            className={`subtasks-progress ${t.done ? "todo-done" : ""}`}
-                            style={{ flex: 1 }}
-                            role="progressbar"
-                            aria-valuemin={0}
-                            aria-valuemax={100}
-                            aria-valuenow={progressPct}
-                          >
-                            <div
-                              className="subtasks-progress-fill"
-                              style={{ width: `${progressPct}%` }}
-                            />
-                          </div>
-
-                          <div style={{ fontSize: 12, color: "var(--app-muted)", whiteSpace: "nowrap" }}>
-                            {doneSubs}/{subsTotal} · {progressPct}%
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-
-                  {/* Subtasks */}
-                  {t.subtasks && t.subtasks.length > 0 && (
-                    <div style={{ marginLeft: 32, display: "flex", flexDirection: "column", gap: 6, minWidth: 100 }}>
-                      {t.subtasks.map(s => (
-                        <div key={s.id} style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                          <input
-                            type="checkbox"
-                            checked={!!s.done}
-                            aria-label={`Toggle subtask ${s.text}`}
-                            onChange={() => handleToggleSubtask(t, s.id)}
-                          />
-                          <div
-                            className={`subtask-title ${
-                              s.priority ? `prio-${s.priority}` : `prio-${t.priority}`
-                            } ${s.done ? "subtask-done" : ""}`}
-                          >
-                            {s.text}
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-
-                  <div style={{ display: "flex", gap: 8 }}>
-                    <button className="btn-danger" onClick={() => onRemove?.(t.id)}>Delete</button>
-                  </div>
-                </li>
-              );
-            })}
+            {tasksForSelected
+              .slice()
+              .sort((a, b) => monthPreviewSort(a, b))
+              .map(t => (
+                <MonthlyTaskRow key={t.id} todo={t} onToggle={safeToggle} onUpdate={safeUpdate} onOpenTask={onOpenTask} onRemove={onRemove} />
+              ))}
           </ul>
         )}
       </div>

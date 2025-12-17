@@ -1,4 +1,4 @@
-type SoundName = "add" | "delete" | "done" | "undo" | "redo" | "error" | "click" | "celebrate" | "celebrate-pro"| "whoosh";
+export type SoundName = "add" | "delete" | "done" | "undo" | "redo" | "error" | "click" | "celebrate" | "celebrate-pro"| "whoosh";
 
 const ctxRef: { ctx: AudioContext | null } = { ctx: null };
 
