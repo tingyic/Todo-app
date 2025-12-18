@@ -423,6 +423,9 @@ export default function TodoItem({ index, todo, onToggle, onRemove, onUpdate, is
 
   // Keyboard handler for the root (when focused)
   function handleRootKeyDown(e: React.KeyboardEvent) {
+    const target = e.target as HTMLElement | null;
+    if (target && (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable)) return;
+    
     const key = e.key;
     if (!isProvisional) {
       if (key !== "Escape") {
@@ -430,8 +433,6 @@ export default function TodoItem({ index, todo, onToggle, onRemove, onUpdate, is
         return;
       }
     }
-    const target = e.target as HTMLElement | null;
-    if (target && (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable)) return;
 
     if (key === "e") {
       // enters edit mode
