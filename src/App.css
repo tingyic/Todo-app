@@ -49,6 +49,9 @@
 
   /* ripple */
   --ripple-color: rgba(2, 6, 23, 0.12);
+
+  /* month view, now line */
+  --now-line: #ef4444;
 }
 
 .theme-dark{
@@ -101,6 +104,9 @@
 
   /* ripple */
   --ripple-color: rgba(255, 255, 255, 0.12);
+
+  /* month view now line */
+  --now-line: #f87171;
 }
 
 /* =========================
@@ -1361,4 +1367,38 @@ kbd.help-kbd, .help-kbd kbd {
 .mc-task-done {
   color: var(--app-muted);
   text-decoration: line-through;
+}
+
+.weekly-calendar {
+  background: var(--app-bg);
+  color: var(--app-text);
+  border-radius: 14px;
+  overflow: hidden;
+  user-select: none;
+}
+
+.weekly-calendar .time-gutter {
+  border-right: 1px solid var(--app-border);
+  padding-right: 6px;
+}
+
+.weekly-calendar .week-grid {
+  background: repeating-linear-gradient(
+    to bottom,
+    transparent,
+    transparent calc(60px - 1px),
+    var(--app-border) 60px
+  );
+}
+
+.weekly-calendar .week-day {
+  border-left: 1px solid var(--app-border);
+}
+
+.weekly-calendar .now-line {
+  background: var(--now-line);
+}
+
+.weekly-calendar .now-line div {
+  box-shadow: 0 0 0 2px var(--app-bg);
 }

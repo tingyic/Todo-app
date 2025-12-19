@@ -9,6 +9,7 @@ import ReminderManager from "./ReminderManager";
 import TodoEditor from "./TodoEditor";
 import TodoList from "./TodoList";
 import Toolbar from "./Toolbar";
+import WeeklyCalendar from "./WeeklyCalendar";
 
 export default function App() {
   const {
@@ -30,7 +31,7 @@ export default function App() {
 
   const [selectedId, setSelectedId] = useState<string | null>(null);
 
-  const [view, setView] = useState<"list" | "year" | "month">("list");
+  const [view, setView] = useState<"list" | "year" | "month" | "week">("list");
   
   const [filter, setFilter] = useState<"all" | "active" | "completed">("all");
   const [query, setQuery] = useState("");
@@ -154,7 +155,7 @@ export default function App() {
   );
 
   const cardRef = useRef<HTMLDivElement | null>(null);
-  const viewRef = useRef<"list" | "year" | "month">(view);
+  const viewRef = useRef<"list" | "year" | "month" | "week">(view);
   useEffect(() => {
     viewRef.current = view;
   }, [view]);
@@ -263,11 +264,11 @@ export default function App() {
     setViewDragX(0);
   }
 
-  const setViewWithFeedback = useCallback((v:  "list" | "year" | "month") => {
+  const setViewWithFeedback = useCallback((v:  "list" | "year" | "month" | "week") => {
     setView(v);
     play("click", false);
     try {haptic(25);} catch {/* empty */}
-    showToast(v === "year" ? "Year view" : v === "month" ? "Month view" : "List view", 700);
+    showToast(v === "year" ? "Year view" : v === "month" ? "Month view" : v === "week" ? "Week view" : "List view", 700);
   }, [showToast])
 
   useEffect(() => {
@@ -605,10 +606,20 @@ export default function App() {
                 className="btn-plain"
                 onClick={() => setViewWithFeedback("month")}
                 aria-pressed={view === "month"}
-                title="Month"
-                style={{ padding: "6px 10px"}}
+                title="Month view"
+                style={{ padding: "6px 10px" }}
               >
                 Month
+              </button>
+
+              <button
+                className="btn-plain"
+                onClick={() => setViewWithFeedback("week")}
+                aria-pressed={view === "week"}
+                title="Week view"
+                style={{ padding: "6px 10px" }}
+              >
+                Week
               </button>
             </div>
 
@@ -781,7 +792,7 @@ export default function App() {
                 showToast("Opened task in list", 800);
               }}
             />
-          ) : (
+          ) : view === "month" ? (
             <MonthlyCalendar
               todos={todos}
               onAddTask={(payload) => {
@@ -807,7 +818,9 @@ export default function App() {
                 showToast(toastMsg ?? "Saved", 800);
               }}
             />
-          )}
+          ) : view === "week" ? (
+            <WeeklyCalendar />
+          ) : null}
         </main>
         
         <footer className="mt-6 flex items-center justify-between text-sm text-app-muted">
@@ -828,7 +841,7 @@ export default function App() {
               reindeer
             </a>
           </div>
-          <div> Version 2.2.5</div>
+          <div> Version 2.3</div>
         </footer>
       </div>
 
