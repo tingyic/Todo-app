@@ -26,6 +26,9 @@
   --prio-low: #05603a;
   --prio-low-bg: #f0fff8;
   --prio-completed: #9ca3af;
+  --prio-completed-bg: rgba(120, 120, 120, 0.6);
+
+  --prio-completed-text: #4b5563;
 
   /* ---- danger variables (used for delete + clear completed) ---- */
   --danger: #9b1c1c;
@@ -49,6 +52,9 @@
 
   /* ripple */
   --ripple-color: rgba(2, 6, 23, 0.12);
+
+  /* month view, now line */
+  --now-line: #ef4444;
 }
 
 .theme-dark{
@@ -78,6 +84,9 @@
   --prio-low: #7be3a6;
   --prio-low-bg: #083222;
   --prio-completed: #6b7280;
+  --prio-completed-bg: rgba(255, 255, 255, 0.6);
+
+  --prio-completed-text: #d1d5db;
 
   /* danger in dark theme */
   --danger: #ff7b7b;
@@ -101,6 +110,9 @@
 
   /* ripple */
   --ripple-color: rgba(255, 255, 255, 0.12);
+
+  /* month view now line */
+  --now-line: #f87171;
 }
 
 /* =========================
@@ -1361,4 +1373,43 @@ kbd.help-kbd, .help-kbd kbd {
 .mc-task-done {
   color: var(--app-muted);
   text-decoration: line-through;
+}
+
+.weekly-calendar {
+  background: var(--app-bg);
+  color: var(--app-text);
+  border-radius: 14px;
+  overflow: hidden;
+  user-select: none;
+}
+
+.weekly-calendar .time-gutter {
+  border-right: 1px solid var(--app-border);
+  padding-right: 6px;
+}
+
+.weekly-calendar .week-grid {
+  background: repeating-linear-gradient(
+    to bottom,
+    transparent,
+    transparent calc(60px - 1px),
+    var(--app-border) 60px
+  );
+}
+
+.weekly-calendar .week-day {
+  border-left: 1px solid var(--app-border);
+}
+
+.weekly-calendar .now-line {
+  background: var(--now-line);
+}
+
+.weekly-calendar .now-line div {
+  box-shadow: 0 0 0 2px var(--app-bg);
+}
+
+.weekly-calendar .all-day-task {
+  transition: background-color 140ms ease, color 140ms ease, opacity 140ms ease;
+  cursor: default;
 }
