@@ -819,7 +819,9 @@ export default function App() {
               }}
             />
           ) : view === "week" ? (
-            <WeeklyCalendar />
+            <WeeklyCalendar 
+              todos={todos}
+            />
           ) : null}
         </main>
         
@@ -841,7 +843,7 @@ export default function App() {
               reindeer
             </a>
           </div>
-          <div> Version 2.3.1</div>
+          <div> Version 2.3.2</div>
         </footer>
       </div>
 

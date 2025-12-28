@@ -1,16 +1,19 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { play, haptic } from "../utils/sound";
+import type { Todo } from "../types";
+import { parseLocalDateTime } from "../utils/dates";
 
 const HOUR_HEIGHT = 120; // px per hour
 const ALL_DAY_TASK_HEIGHT = 24;
 const ALL_DAY_TASK_GAP = 4;
 const HEADER_HEIGHT = 48;
 const DAY_LABELS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+const MAX_PINNED_PER_DAY = 5;
 
 function startOfWeek(d: Date) {
   const date = new Date(d);
   const day = date.getDay(); // 0 Sun .. 6 Sat
-  const diff = (day === 0 ? -7 : 0) - day; // Sunday start
+  const diff = -day;
   date.setDate(date.getDate() + diff);
   date.setHours(0, 0, 0, 0);
   return date;
@@ -32,9 +35,10 @@ function isSameWeek(a: Date, b: Date) {
 
 type Props = {
   referenceDate?: Date;
+  todos: Todo[];
 };
 
-type DeadlineTask = {
+type PinnedTask = {
   id: string;
   title: string;
   date: Date;
@@ -42,14 +46,24 @@ type DeadlineTask = {
   completed: boolean;
 };
 
-
-export default function WeeklyCalendar({ referenceDate }: Props) {
+export default function WeeklyCalendar({ referenceDate, todos }: Props) {
   const [now, setNow] = useState(() => new Date());
   const scrollRef = useRef<HTMLDivElement | null>(null);
 
   const [anchorDate, setAnchorDate] = useState<Date>(
     () => referenceDate ?? new Date()
   );
+
+  const [expandedDays, setExpandedDays] = useState<Set<string>>(() => new Set());
+
+  function toggleDayExpanded(dayKey: string) {
+    setExpandedDays(prev => {
+      const next = new Set(prev);
+      if (next.has(dayKey)) next.delete(dayKey);
+      else next.add(dayKey);
+      return next;
+    });
+  }
 
   const isCurrentWeek = isSameWeek(anchorDate, new Date());
 
@@ -75,62 +89,73 @@ export default function WeeklyCalendar({ referenceDate }: Props) {
 
   const nowY = timeToY(now);
 
-  const demoTasks = useMemo<DeadlineTask[]>(
-    () => [
-      {
-        id: "1",
-        title: "Finish homework",
-        date: new Date(),
-        priority: "high",
-        completed: false,
-      },
-      {
-        id: "2",
-        title: "Buy groceries",
-        date: new Date(),
-        priority: "low",
-        completed: false,
-      },
-      {
-        id: "3",
-        title:
-          "This is a trivially long task, just to test truncation, hopefully it works and won't break the code, im writing this just to increase word count, haha",
-        date: new Date(),
-        priority: "medium",
-        completed: false,
-      },
-    ],
-    []
-  );
+  const pinnedTasks = useMemo<PinnedTask[]>(() => {
+    return todos
+      .filter(t => !!t.due)
+      .map(t => {
+        const parsed = parseLocalDateTime(String(t.due));
+        if (!parsed) return null;
+        return {
+          id: t.id,
+          title: t.text,
+          date: parsed,
+          priority: (t.priority ?? "medium") as PinnedTask["priority"],
+          completed: !!t.done,
+        } as PinnedTask;
+      })
+      .filter((x): x is PinnedTask => x !== null)
+      .filter(t => isSameWeek(t.date, anchorDate));
+  }, [todos, anchorDate]);
 
   const tasksByDay = useMemo(() => {
-    const map = new Map<string, DeadlineTask[]>();
+    const map = new Map<string, PinnedTask[]>();
 
     for (const d of days) {
       map.set(d.toDateString(), []);
     }
 
-    for (const task of demoTasks) {
+    for (const task of pinnedTasks) {
       const key = task.date.toDateString();
       if (!map.has(key)) map.set(key, []);
       map.get(key)!.push(task);
     }
 
+    for (const tasks of map.values()) {
+      tasks.sort((a, b) => {
+        if (a.completed !== b.completed) {
+          return a.completed ? 1 : -1;
+        }
+        return a.date.getTime() - b.date.getTime();
+      });
+    }
+
     return map;
-  }, [days, demoTasks]);
+  }, [days, pinnedTasks]);
 
-const maxPinnedPerDay = useMemo(() => {
-  let max = 0;
-  for (const tasks of tasksByDay.values()) {
-    max = Math.max(max, tasks.length);
-  }
-  return max;
-}, [tasksByDay])
+  const maxVisibleLines = useMemo(() => {
+    let max = 0;
+    for (const [dayKey, tasks] of tasksByDay.entries()) {
+      const isExpanded = expandedDays.has(dayKey);
+      const count = tasks.length;
+      const hasMore = count > MAX_PINNED_PER_DAY;
 
-const allDayHeight = 
-  maxPinnedPerDay === 0
-    ? 0
-    : maxPinnedPerDay * ALL_DAY_TASK_HEIGHT + (maxPinnedPerDay - 1) * ALL_DAY_TASK_GAP + 12;
+      let visibleLines = 0;
+      if (isExpanded) {
+        visibleLines = count + (hasMore ? 1 : 0);
+      } else {
+        visibleLines = Math.min(count, MAX_PINNED_PER_DAY) + (hasMore ? 1 : 0);
+      }
+
+      max = Math.max(max, visibleLines);
+    }
+
+    return max;
+  }, [tasksByDay, expandedDays]);
+
+  const allDayHeight =
+    maxVisibleLines === 0
+      ? 0
+      : maxVisibleLines * ALL_DAY_TASK_HEIGHT + (Math.max(0, maxVisibleLines - 1)) * ALL_DAY_TASK_GAP + 12;
 
   useEffect(() => {
     const el = scrollRef.current;
@@ -176,7 +201,7 @@ const allDayHeight =
     return () => window.removeEventListener("keydown", onKeyDown);
   }, []);
 
-  function getPriorityStyle(priority: DeadlineTask["priority"], completed: boolean): React.CSSProperties {
+  function getPriorityStyle(priority: PinnedTask["priority"], completed: boolean): React.CSSProperties {
     if (completed) {
       return {
         background: "var(--prio-completed-bg)",
@@ -186,7 +211,7 @@ const allDayHeight =
       };
     }
 
-    const map: Record<DeadlineTask['priority'], { bg: string; color: string }> = {
+    const map: Record<PinnedTask['priority'], { bg: string; color: string }> = {
       high: { bg: "var(--prio-high-bg)", color: "var(--prio-high)" },
       medium: { bg: "var(--prio-medium-bg)", color: "var(--prio-medium)" },
       low: { bg: "var(--prio-low-bg)", color: "var(--prio-low)" },
@@ -327,20 +352,35 @@ const allDayHeight =
               zIndex: 25,
               background: "var(--app-bg)",
               borderBottom: "1px solid var(--app-border)",
-              alignItems: "center",
+              alignItems: "start",
               boxSizing: "border-box",
             }}
           >
             {days.map(d => {
-              const tasks = tasksByDay.get(d.toDateString()) ?? [];
+              const dayKey = d.toDateString();
+              const tasks = tasksByDay.get(dayKey) ?? [];
+              const isExpanded = expandedDays.has(dayKey);
+
+              const hasMore = tasks.length > MAX_PINNED_PER_DAY;
+              const visibleTasks = isExpanded ? tasks : tasks.slice(0, MAX_PINNED_PER_DAY);
+
               return (
-                <div key={d.toDateString()} style={{
+                <div key={dayKey} style={{
                   padding: 6,
                   boxSizing: "border-box",
-                  overflow: "hidden"
+                  overflow: "hidden",
+                  minWidth: 0,
+                  minHeight: 0,
+                  display: "flex",
+                  flexDirection: "column",
+                  alignItems: "stretch",
+                  justifyContent: "flex-start",
                 }}>
-                  {tasks.map(t => (
+                  {visibleTasks.map(t => (
                     <div key={t.id} title={t.title} style={{
+                      display: "block",
+                      width: "100%",
+                      minWidth: 0,
                       whiteSpace: "nowrap",
                       overflow: "hidden",
                       textOverflow: "ellipsis",
@@ -348,9 +388,34 @@ const allDayHeight =
                       padding: "4px 6px",
                       fontSize: 12,
                       boxSizing: "border-box",
+                      marginBottom: ALL_DAY_TASK_GAP,
+                      height: ALL_DAY_TASK_HEIGHT,
+                      lineHeight: `${ALL_DAY_TASK_HEIGHT - 4}px`,
                       ...getPriorityStyle(t.priority, t.completed)
                     }}>{t.title}</div>
                   ))}
+
+                  {hasMore && (
+                    <div style={{
+                      height: ALL_DAY_TASK_HEIGHT,
+                      display: "flex",
+                      justifyContent: "flex-end",
+                      alignItems: "center",
+                      marginTop: 2,
+                    }}>
+                      <button
+                        onClick={() => toggleDayExpanded(dayKey)}
+                        style={{
+                          fontSize: 11,
+                          padding: "2px 6px",
+                          borderRadius: 6,
+                          opacity: 0.9,
+                        }}
+                      >
+                        {isExpanded ? "Collapse" : `+${tasks.length - MAX_PINNED_PER_DAY} more`}
+                      </button>
+                    </div>
+                  )}
                 </div>
               );
             })}
@@ -401,6 +466,7 @@ const allDayHeight =
   );
 }
 
+/* MonthPicker unchanged */
 function MonthPicker({
   value,
   onChange,

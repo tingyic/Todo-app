@@ -734,7 +734,9 @@ export default function TodoItem({ index, todo, onToggle, onRemove, onUpdate, is
             <div className={`todo-title prio-${todo.priority}`}>{todo.text}</div>
 
             <div className="todo-tags" aria-hidden={todo.tags.length === 0}>
-              {todo.tags.length ? todo.tags.map(t => <span key={t} className="tag">#{t}</span>) : <span className="no-tags">no tags</span>}
+              {todo.tags.length ? todo.tags.map((t, idx) =>(
+                <span key={`${todo.id}-tag-${idx}-${t}`} className="tag">#{t}</span>
+              )): <span className="no-tags">no tags</span>}
             </div>
 
             <div className="todo-meta">
@@ -747,8 +749,8 @@ export default function TodoItem({ index, todo, onToggle, onRemove, onUpdate, is
             {/* show reminders summary */}
             {todo.reminders && todo.reminders.length > 0 && (
               <div style={{ marginTop: 8, display: "flex", gap: 8, flexWrap: "wrap" }}>
-                {todo.reminders.map(m => (
-                  <div key={m} className="tag" style={{ padding: "4px 8px" }}>
+                {todo.reminders.map((m, idx) => (
+                  <div key={`${todo.id}-rem-${idx}-${m}`} className="tag" style={{ padding: "4px 8px" }}>
                     {m === 0 ? "At due" : (m >= 60 ? `${m / 60} hr` : `${m} min`)}
                   </div>
                 ))}
@@ -824,8 +826,8 @@ export default function TodoItem({ index, todo, onToggle, onRemove, onUpdate, is
                             {(s.due ? formatLocalDateTime(s.due as string) : "")}
                             {(s.reminders && s.reminders.length) ? (
                               <span style={{ display: "inline-flex", gap: 6, alignItems: "center", marginLeft: 6 }}>
-                                {(s.reminders ?? []).map(m => (
-                                  <span key={m} className="tag" style={{ padding: "4px 8px", fontSize: 12 }}>
+                                {(s.reminders ?? []).map((m, ridx) => (
+                                  <span key={`${todo.id}-sub-${s.id}-rem-${ridx}-${m}`} className="tag" style={{ padding: "4px 8px", fontSize: 12 }}>
                                     {m === 0 ? "At due" : (m >= 60 ? `${m/60} hr` : `${m} min`)}
                                   </span>
                                 ))}
@@ -926,8 +928,8 @@ export default function TodoItem({ index, todo, onToggle, onRemove, onUpdate, is
 
               {/* show draft reminders */}
               <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginLeft: 8 }}>
-                {(draft.reminders ?? []).map(m => (
-                  <div key={m} style={{ display: "inline-flex", alignItems: "center", gap: 8, padding: "4px 8px", borderRadius: 999, border: "1px solid var(--app-border)", background: "var(--tag-bg)" }}>
+                {(draft.reminders ?? []).map((m, idx) => (
+                  <div key={`${todo.id}-draft-rem-${idx}-${m}`} style={{ display: "inline-flex", alignItems: "center", gap: 8, padding: "4px 8px", borderRadius: 999, border: "1px solid var(--app-border)", background: "var(--tag-bg)" }}>
                     <span style={{ fontSize: 12 }}>{m === 0 ? "At due" : (m >= 60 ? `${m/60} hr` : `${m} min`)}</span>
                     <button type="button" onClick={() => removeReminderFromDraft(m)} className="btn-plain" style={{ padding: "4px 6px" }}>×</button>
                   </div>
@@ -1035,8 +1037,8 @@ export default function TodoItem({ index, todo, onToggle, onRemove, onUpdate, is
               {/* show subtask reminder chips */}
               {subtaskReminders.length > 0 && (
                 <div style={{ display: "flex", gap: 8, marginTop: 6, flexWrap: "wrap" }}>
-                  {subtaskReminders.map(m => (
-                    <div key={m} style={{ display: "inline-flex", alignItems: "center", gap: 8, padding: "4px 8px", borderRadius: 999, border: "1px solid var(--app-border)", background: "var(--tag-bg)" }}>
+                  {subtaskReminders.map((m, idx) => (
+                    <div key={`${todo.id}-subdraft-rem-${idx}-${m}`} style={{ display: "inline-flex", alignItems: "center", gap: 8, padding: "4px 8px", borderRadius: 999, border: "1px solid var(--app-border)", background: "var(--tag-bg)" }}>
                       <span style={{ fontSize: 12 }}>{m === 0 ? "At due" : (m >= 60 ? `${m / 60} hr` : `${m} min`)}</span>
                       <button type="button" onClick={() => removeSubtaskReminder(m)} className="btn-plain" style={{ padding: "4px 6px" }}>x</button>
                     </div>
@@ -1127,8 +1129,8 @@ export default function TodoItem({ index, todo, onToggle, onRemove, onUpdate, is
 
                             {/* show current reminders as chips with remove */}
                             <div style={{ marginTop: 6, display: "flex", gap: 8, flexWrap: "wrap" }}>
-                              {(s.reminders ?? []).map(m => (
-                                <div key={m} style={{ display: "inline-flex", alignItems: "center", gap: 8, padding: "4px 8px", borderRadius: 999, border: "1px solid var(--app-border)", background: "var(--tag-bg)" }}>
+                              {(s.reminders ?? []).map((m, ridx) => (
+                                <div key={`${todo.id}-sub-${s.id}-rem-${ridx}-${m}`} style={{ display: "inline-flex", alignItems: "center", gap: 8, padding: "4px 8px", borderRadius: 999, border: "1px solid var(--app-border)", background: "var(--tag-bg)" }}>
                                   <span style={{ fontSize: 12 }}>{m === 0 ? "At due" : (m >= 60 ? `${m/60} hr` : `${m} min`)}</span>
                                   <button
                                     type="button"
