@@ -46,6 +46,26 @@ type PinnedTask = {
   completed: boolean;
 };
 
+type TimetableTask = {
+  id: string;
+  title: string,
+  dayIndex: number; // 0 = Sun ... 6 = Sat
+  start: string;
+  end: string;
+  priority: "low" | "medium" | "high";
+};
+
+function parseTimeToMinutes(time: string): number | null {
+  if (!time || typeof time !== "string") return null;
+  const m = time.match(/^(\d{1,2}):(\d{2})(?::\d{2})?$/);
+  if (!m) return null;
+  const hh = Number(m[1]);
+  const mm = Number(m[2]);
+  if (!Number.isFinite(hh) || !Number.isFinite(mm)) return null;
+  if (hh < 0 || hh > 23 || mm < 0 || mm > 59) return null;
+  return hh * 60 + mm;
+}
+
 export default function WeeklyCalendar({ referenceDate, todos }: Props) {
   const [now, setNow] = useState(() => new Date());
   const scrollRef = useRef<HTMLDivElement | null>(null);
@@ -88,6 +108,58 @@ export default function WeeklyCalendar({ referenceDate, todos }: Props) {
   );
 
   const nowY = timeToY(now);
+
+  const nowLineRef = useRef<HTMLDivElement | null>(null);
+  const nowTooltipRef = useRef<HTMLDivElement | null>(null);
+
+  const [nowHovered, setNowHovered] = useState(false);
+  const [nowPinned, setNowPinned] = useState(false);
+
+  const [nowDetailed, setNowDetailed] = useState<Date>(() => new Date());
+
+  const showNowTooltip = nowHovered || nowPinned;
+
+  useEffect(() => {
+    if (!showNowTooltip) return;
+    setNowDetailed(new Date());
+    const id = setInterval(() => setNowDetailed(new Date()), 1000);
+    return () => clearInterval(id);
+  }, [showNowTooltip]);
+
+  useEffect(() => {
+    function onDocDown(e: MouseEvent | TouchEvent) {
+      if (!nowPinned) return;
+      const target = (e as MouseEvent).target as Node | null;
+      if (!target) return;
+      if (nowLineRef.current?.contains(target) || nowTooltipRef.current?.contains(target)) return;
+      setNowPinned(false);
+    }
+
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "Escape") {
+        setNowPinned(false);
+        setNowHovered(false);
+      }
+    }
+
+    function onScroll() {
+      setNowPinned(false);
+      setNowHovered(false);
+    }
+
+    document.addEventListener("mousedown", onDocDown);
+    document.addEventListener("touchstart", onDocDown);
+    window.addEventListener("keydown", onKey);
+    const scEl = scrollRef.current;
+    scEl?.addEventListener("scroll", onScroll, { passive: true });
+
+    return () => {
+      document.removeEventListener("mousedown", onDocDown);
+      document.removeEventListener("touchstart", onDocDown);
+      window.removeEventListener("keydown", onKey);
+      scEl?.removeEventListener("scroll", onScroll);
+    };
+  }, [nowPinned, scrollRef]);
 
   const pinnedTasks = useMemo<PinnedTask[]>(() => {
     return todos
@@ -222,6 +294,84 @@ export default function WeeklyCalendar({ referenceDate, todos }: Props) {
       color: map[priority].color,
     };
   }
+
+  const timetableTasks = useMemo<TimetableTask[]>(
+    () => [
+      {
+        id: "tt-1",
+        title: "CS2040S Lecture",
+        dayIndex: 1, // Mon
+        start: "10:00",
+        end: "12:00",
+        priority: "high",
+      },
+      {
+        id: "tt-2",
+        title: "Group Meeting CS2103T",
+        dayIndex: 1, // Mon
+        start: "10:00",
+        end: "11:45",
+        priority: "medium",
+      },
+      {
+        id: "tt-3",
+        title: "CS1010 Tutorial TA",
+        dayIndex: 5, // Fri
+        start: "13:00",
+        end: "14:15",
+        priority: "low",
+      },
+    ],
+    []
+  );
+
+  const timetableLayout = useMemo(() => {
+    const map = new Map<string, { colIndex: number; colCount: number }>();
+
+    for (let day = 0; day < 7; day++) {
+      const events = timetableTasks.filter(e => e.dayIndex === day);
+      if (events.length === 0) continue;
+
+      const sorted = events
+        .map(e => {
+          const startMin = parseTimeToMinutes(e.start);
+          const endMin = parseTimeToMinutes(e.end);
+          return startMin === null || endMin === null
+            ? null
+            : { ...e, startMin, endMin };
+        })
+        .filter((x): x is (TimetableTask & { startMin: number; endMin: number }) => x !== null)
+        .sort((a, b) => a.startMin - b.startMin);
+
+      const colsEnd: number[] = [];
+      const assignments: { id: string; col: number }[] = [];
+
+      for (const tasks of sorted) {
+        let placedCol = -1;
+        for (let c = 0; c < colsEnd.length; c++) {
+          if (tasks.startMin >= colsEnd[c]) {
+            placedCol = c;
+            break;
+          }
+        }
+        if (placedCol === -1) {
+          placedCol = colsEnd.length;
+          colsEnd.push(tasks.endMin);
+        } else {
+          colsEnd[placedCol] = tasks.endMin;
+        }
+        assignments.push({ id: tasks.id, col: placedCol });
+      }
+
+      const finalColCount = Math.max(1, colsEnd.length);
+
+      for (const a of assignments) {
+        map.set(a.id, { colIndex: a.col, colCount: finalColCount });
+      }
+    }
+
+    return map;
+  }, [timetableTasks]);
 
   const timedHeight = 24 * HOUR_HEIGHT;
   const halfHour = HOUR_HEIGHT / 2;
@@ -443,22 +593,126 @@ export default function WeeklyCalendar({ referenceDate, todos }: Props) {
               ))}
             </div>
 
+            {/* Timetable tasks */}
+            {timetableTasks.map(tasks => {
+              const layout = timetableLayout.get(tasks.id) ?? { colIndex: 0, colCount: 1 };
+
+              const startMin = parseTimeToMinutes(tasks.start);
+              const endMin = parseTimeToMinutes(tasks.end);
+              if (startMin === null || endMin === null) return null;
+
+              const top = (startMin / 60) * HOUR_HEIGHT;
+              const height = Math.max(8, ((endMin - startMin) / 60) * HOUR_HEIGHT);
+
+              const dayWidth = 100 / 7;
+              const colWidth = dayWidth / layout.colCount;
+              const left = dayWidth * tasks.dayIndex + colWidth * layout.colIndex;
+
+              const pStyle = getPriorityStyle(tasks.priority, false);
+              const background = (pStyle.background as string) ?? "var(--prio-medium-bg)";
+              const color = (pStyle.color as string) ?? "var(--prio-medium)";
+
+              return (
+                <div
+                  key={tasks.id}
+                  title={`${tasks.title} ${String(tasks.start)}-${String(tasks.end)}`}
+                  style={{
+                    position: "absolute",
+                    top,
+                    left: `${left}%`,
+                    width: `${colWidth}%`,
+                    height,
+                    padding: 6,
+                    boxSizing: "border-box",
+                    borderRadius: 6,
+                    overflow: "hidden",
+                    fontSize: 12,
+                    border: "1px solid var(--app-border)",
+                    background,
+                    color,
+                    zIndex: 10,
+                    display: "flex",
+                    alignItems: "center",
+                    whiteSpace: "wrap",
+                    textOverflow: "ellipsis",
+                  }}
+                >
+                  {tasks.title}
+                </div>
+              );
+            })}
+
             {/* NOW line inside timed area */}
-            {todayIndex !== -1 && (
-              <div style={{
-                position: "absolute",
-                top: nowY,
-                left: `calc((100% / 7) * ${todayIndex})`,
-                width: `calc(100% / 7)`,
-                height: 2,
-                zIndex: 40,
-                pointerEvents: "none",
-                background: "transparent"
-              }}>
-                <div style={{ position: "absolute", left: -4, top: -4, width: 8, height: 8, borderRadius: "50%", background: "var(--now-line)" }} />
-                <div style={{ position: "absolute", left: 0, right: 0, top: 0, height: 2, background: "var(--now-line)" }} />
-              </div>
-            )}
+            {todayIndex !== -1 && (() => {
+              const nowForPosition = showNowTooltip ? nowDetailed : now;
+              const nowYUsed = timeToY(nowForPosition);
+
+              const colLeft = `calc((100% / 7) * ${todayIndex})`;
+              const tooltipLeftCalc = `calc((100% / 7) * ${todayIndex} + 8px)`;
+              const tooltipTop = Math.max(8, nowYUsed - 34);
+
+              return (
+                <>
+                  <div
+                    ref={nowLineRef}
+                    style={{
+                      position: "absolute",
+                      top: nowYUsed,
+                      left: colLeft,
+                      width: `calc(100% / 7)`,
+                      height: 2,
+                      zIndex: 40,
+                      pointerEvents: "auto", // enable hover/click
+                      background: "transparent",
+                      display: "block",
+                      boxSizing: "border-box",
+                    }}
+                    onMouseEnter={() => setNowHovered(true)}
+                    onMouseLeave={() => setNowHovered(false)}
+                    onClick={(e) => {
+                      setNowPinned(p => !p);
+                      e.stopPropagation();
+                    }}
+                    onTouchStart={(e) => {
+                      setNowPinned(p => !p);
+                      e.stopPropagation();
+                    }}
+                    role="button"
+                    aria-label="Current time"
+                  >
+                    {/* dot */}
+                    <div style={{ position: "absolute", left: -4, top: -4, width: 8, height: 8, borderRadius: "50%", background: "var(--now-line)" }} />
+                    {/* line */}
+                    <div style={{ position: "absolute", left: 0, right: 0, top: 0, height: 2, background: "var(--now-line)" }} />
+                  </div>
+
+                  {/* Tooltip (hovered/pinned) */}
+                  {showNowTooltip && (
+                    <div
+                      ref={nowTooltipRef}
+                      style={{
+                        position: "absolute",
+                        left: tooltipLeftCalc,
+                        top: tooltipTop,
+                        zIndex: 60, // above sticky headers
+                        background: "var(--app-card)",
+                        color: "var(--app-text)",
+                        border: "1px solid var(--app-border)",
+                        padding: "6px 8px",
+                        borderRadius: 6,
+                        boxShadow: "0 6px 18px rgba(0,0,0,0.35)",
+                        fontSize: 12,
+                        whiteSpace: "nowrap",
+                        transform: "translateX(0)",
+                        pointerEvents: "auto",
+                      }}
+                    >
+                      {nowDetailed.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit"})}
+                    </div>
+                  )}
+                </>
+              );
+            })()}
           </div>
         </div>
       </div>
