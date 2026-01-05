@@ -821,6 +821,12 @@ export default function App() {
           ) : view === "week" ? (
             <WeeklyCalendar 
               todos={todos}
+              onOpenTask={(id) => {
+                setViewWithFeedback("list");
+                setSelectedId(id);
+                showToast("Opened task in list", 800);
+              }}
+              showToast={showToast}
             />
           ) : null}
         </main>

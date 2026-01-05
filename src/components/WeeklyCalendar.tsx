@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { play, haptic } from "../utils/sound";
 import type { Todo } from "../types";
 import { parseLocalDateTime } from "../utils/dates";
+import TimetableEditor, { type TimetableTask, type TimetableEditorWithHelpers } from "./TimetableEditor";
 
 const HOUR_HEIGHT = 120; // px per hour
 const ALL_DAY_TASK_HEIGHT = 24;
@@ -9,6 +10,7 @@ const ALL_DAY_TASK_GAP = 4;
 const HEADER_HEIGHT = 48;
 const DAY_LABELS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 const MAX_PINNED_PER_DAY = 5;
+const TIMETABLE_STORAGE_KEY = "timetable:v1";
 
 function startOfWeek(d: Date) {
   const date = new Date(d);
@@ -36,6 +38,8 @@ function isSameWeek(a: Date, b: Date) {
 type Props = {
   referenceDate?: Date;
   todos: Todo[];
+  onOpenTask?: (id: string) => void;
+  showToast?: (msg: string, ms?: number) => void;
 };
 
 type PinnedTask = {
@@ -46,27 +50,28 @@ type PinnedTask = {
   completed: boolean;
 };
 
-type TimetableTask = {
-  id: string;
-  title: string,
-  dayIndex: number; // 0 = Sun ... 6 = Sat
-  start: string;
-  end: string;
-  priority: "low" | "medium" | "high";
-};
+const parseTimeToMinutes = (TimetableEditor as TimetableEditorWithHelpers).parseTimeToMinutes!;
 
-function parseTimeToMinutes(time: string): number | null {
-  if (!time || typeof time !== "string") return null;
-  const m = time.match(/^(\d{1,2}):(\d{2})(?::\d{2})?$/);
-  if (!m) return null;
-  const hh = Number(m[1]);
-  const mm = Number(m[2]);
-  if (!Number.isFinite(hh) || !Number.isFinite(mm)) return null;
-  if (hh < 0 || hh > 23 || mm < 0 || mm > 59) return null;
-  return hh * 60 + mm;
+function loadTimetableFromStorage(): TimetableTask[] {
+  try {
+    const raw = localStorage.getItem(TIMETABLE_STORAGE_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw) as TimetableTask[];
+    if (!Array.isArray(parsed)) return [];
+    return parsed.filter(p => typeof p.id === "string");
+  } catch {
+    return [];
+  }
+}
+function saveTimetableToStorage(tasks: TimetableTask[]) {
+  try {
+    localStorage.setItem(TIMETABLE_STORAGE_KEY, JSON.stringify(tasks));
+  } catch {
+    // ignore
+  }
 }
 
-export default function WeeklyCalendar({ referenceDate, todos }: Props) {
+export default function WeeklyCalendar({ referenceDate, todos, onOpenTask, showToast }: Props) {
   const [now, setNow] = useState(() => new Date());
   const scrollRef = useRef<HTMLDivElement | null>(null);
 
@@ -114,9 +119,7 @@ export default function WeeklyCalendar({ referenceDate, todos }: Props) {
 
   const [nowHovered, setNowHovered] = useState(false);
   const [nowPinned, setNowPinned] = useState(false);
-
   const [nowDetailed, setNowDetailed] = useState<Date>(() => new Date());
-
   const showNowTooltip = nowHovered || nowPinned;
 
   useEffect(() => {
@@ -295,35 +298,59 @@ export default function WeeklyCalendar({ referenceDate, todos }: Props) {
     };
   }
 
-  const timetableTasks = useMemo<TimetableTask[]>(
-    () => [
+  const [timetableTasks, setTimetableTasks] = useState<TimetableTask[]>(() => {
+    const fromStorage = loadTimetableFromStorage();
+    if (fromStorage.length > 0) return fromStorage;
+    // fallback examples
+    return [
       {
         id: "tt-1",
         title: "CS2040S Lecture",
-        dayIndex: 1, // Mon
+        dayIndex: 1,
         start: "10:00",
         end: "12:00",
         priority: "high",
+        tags: ["lecture"],
       },
       {
         id: "tt-2",
         title: "Group Meeting CS2103T",
-        dayIndex: 1, // Mon
+        dayIndex: 1,
         start: "10:00",
         end: "11:45",
         priority: "medium",
+        tags: ["meeting"],
       },
       {
         id: "tt-3",
         title: "CS1010 Tutorial TA",
-        dayIndex: 5, // Fri
+        dayIndex: 5,
         start: "13:00",
         end: "14:15",
         priority: "low",
+        tags: ["tutorial"],
       },
-    ],
-    []
-  );
+    ];
+  });
+
+  useEffect(() => {
+    saveTimetableToStorage(timetableTasks);
+  }, [timetableTasks]);
+
+  function addTimetableTask(task: Omit<TimetableTask, "id">) {
+    const t: TimetableTask = { ...task, id: `tt-${Date.now()}-${Math.floor(Math.random() * 1000)}` };
+    setTimetableTasks(prev => [...prev, t]);
+    play("click", false);
+    haptic(10);
+    showToast?.("Timetable task added", 900);
+  }
+
+  function updateTimetableTask(id:string, payload: Omit<TimetableTask, "id">) {
+    setTimetableTasks(prev => prev.map(t => (t.id === id ? { ...t, ...payload } : t)));
+    play("click", false);
+    haptic(10);
+    showToast?.("Timetable task updated", 800);
+  }
 
   const timetableLayout = useMemo(() => {
     const map = new Map<string, { colIndex: number; colCount: number }>();
@@ -376,6 +403,36 @@ export default function WeeklyCalendar({ referenceDate, todos }: Props) {
   const timedHeight = 24 * HOUR_HEIGHT;
   const halfHour = HOUR_HEIGHT / 2;
 
+  const [addOpen, setAddOpen] = useState(false);
+  
+  const [editTimetableOpen, setEditTimetableOpen] = useState(false);
+  const [editTimetableId, setEditTimetableId] = useState<string | null>(null);
+  const [editTimetablePrefill, setEditTimetablePrefill] = useState<Partial<TimetableTask> | undefined>(undefined);
+
+  function startEditTimetable(id: string) {
+    const t = timetableTasks.find(x => x.id === id);
+    if (!t) return;
+    setEditTimetableId(id);
+    setEditTimetablePrefill({ ...t });
+    setEditTimetableOpen(true);
+  }
+
+  function handleSaveEditTimetable(payload: Omit<TimetableTask, "id">) {
+    if (!editTimetableId) return;
+    updateTimetableTask(editTimetableId, payload);
+    setEditTimetableOpen(false);
+    setEditTimetableId(null);
+    setEditTimetablePrefill(undefined);
+  }
+
+  function handlePinnedClick(id: string) {
+    if (onOpenTask) {
+      play("click", false);
+      haptic(10);
+      onOpenTask(id);
+    }
+  }
+
   return (
     <div className="weekly-calendar" style={{ display: "flex", flexDirection: "column", height: "70vh" }}>
 
@@ -389,19 +446,35 @@ export default function WeeklyCalendar({ referenceDate, todos }: Props) {
           borderBottom: "1px solid var(--app-border)",
         }}
       >
-        <button onClick={goPrevWeek}>◀</button>
+        <button className="app-btn" onClick={goPrevWeek}>◀</button>
 
         {!isCurrentWeek && (
-          <button onClick={goToday}>Today</button>
+          <button className="app-btn" onClick={goToday}>Today</button>
         )}
 
-        <button onClick={goNextWeek}>▶</button>
+        <button className="app-btn" onClick={goNextWeek}>▶</button>
 
         {/* Month-Year dropdown */}
         <MonthPicker
           value={anchorDate}
           onChange={setAnchorDate}
         />
+
+        {/* Spacer */}
+        <div style={{ flex: 1 }} />
+
+        {/* Add timetable task button */}
+        <button
+          className="app-btn"
+          onClick={() => {
+            setAddOpen(true);
+            play("click", false);
+            haptic(10);
+          }}
+          title="Add timetable task"
+        >
+          +
+        </button>
       </div>
       
       {/* scrollable area: single grid inside */}
@@ -527,7 +600,7 @@ export default function WeeklyCalendar({ referenceDate, todos }: Props) {
                   justifyContent: "flex-start",
                 }}>
                   {visibleTasks.map(t => (
-                    <div key={t.id} title={t.title} style={{
+                    <div key={t.id} title={t.title} onClick={(e) => { e.stopPropagation(); handlePinnedClick(t.id); }} role="button" style={{
                       display: "block",
                       width: "100%",
                       minWidth: 0,
@@ -541,6 +614,7 @@ export default function WeeklyCalendar({ referenceDate, todos }: Props) {
                       marginBottom: ALL_DAY_TASK_GAP,
                       height: ALL_DAY_TASK_HEIGHT,
                       lineHeight: `${ALL_DAY_TASK_HEIGHT - 4}px`,
+                      cursor: "pointer",
                       ...getPriorityStyle(t.priority, t.completed)
                     }}>{t.title}</div>
                   ))}
@@ -616,6 +690,8 @@ export default function WeeklyCalendar({ referenceDate, todos }: Props) {
                 <div
                   key={tasks.id}
                   title={`${tasks.title} ${String(tasks.start)}-${String(tasks.end)}`}
+                  onClick={(e) => { e.stopPropagation(); startEditTimetable(tasks.id); }}
+                  role="button"
                   style={{
                     position: "absolute",
                     top,
@@ -635,9 +711,12 @@ export default function WeeklyCalendar({ referenceDate, todos }: Props) {
                     alignItems: "center",
                     whiteSpace: "wrap",
                     textOverflow: "ellipsis",
+                    cursor: "pointer",
                   }}
                 >
-                  {tasks.title}
+                  <div style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                    {tasks.title}
+                  </div>
                 </div>
               );
             })}
@@ -700,7 +779,7 @@ export default function WeeklyCalendar({ referenceDate, todos }: Props) {
                         border: "1px solid var(--app-border)",
                         padding: "6px 8px",
                         borderRadius: 6,
-                        boxShadow: "0 6px 18px rgba(0,0,0,0.35)",
+                        boxShadow: "0 6px 18px rgba(0, 0, 0, 0.35)",
                         fontSize: 12,
                         whiteSpace: "nowrap",
                         transform: "translateX(0)",
@@ -716,11 +795,48 @@ export default function WeeklyCalendar({ referenceDate, todos }: Props) {
           </div>
         </div>
       </div>
+
+      {/* Timetable editor (add) */}
+      <TimetableEditor
+        open={addOpen}
+        initialDay={new Date().getDay()}
+        onClose={() => setAddOpen(false)}
+        onSave={payload => {
+          addTimetableTask(payload);
+        }}
+      />
+
+      {/* Timetable editor (edit) */}
+      <TimetableEditor
+        open={editTimetableOpen}
+        initialDay={editTimetablePrefill?.dayIndex ?? new Date().getDay()}
+        prefill={editTimetablePrefill}
+        onClose={() => {
+          setEditTimetableOpen(false);
+          setEditTimetableId(null);
+          setEditTimetablePrefill(undefined);
+        }}
+        onSave={payload => handleSaveEditTimetable(payload)}
+        onDelete={() => {
+          if (!editTimetableId) {
+            setEditTimetableOpen(false);
+            setEditTimetableId(null);
+            setEditTimetablePrefill(undefined);
+            return;
+          }
+          setTimetableTasks(prev => prev.filter(t => t.id !== editTimetableId));
+          play("delete", false);
+          haptic(10);
+          setEditTimetableOpen(false);
+          setEditTimetableId(null);
+          setEditTimetablePrefill(undefined);
+          showToast?.("Timetable task deleted", 900);
+        }}
+      />
     </div>
   );
 }
 
-/* MonthPicker unchanged */
 function MonthPicker({
   value,
   onChange,
@@ -833,14 +949,14 @@ function MonthPicker({
               marginBottom: 6,
             }}
           >
-            <button onClick={prevMonth}>◀</button>
+            <button className="app-btn" onClick={prevMonth}>◀</button>
             <strong style={{ fontSize: 13 }}>
               {viewDate.toLocaleString("default", {
                 month: "long",
                 year: "numeric",
               })}
             </strong>
-            <button onClick={nextMonth}>▶</button>
+            <button className="app-btn" onClick={nextMonth}>▶</button>
           </div>
 
           {/* Day labels */}
@@ -877,6 +993,7 @@ function MonthPicker({
 
               return (
                 <button
+                  className="app-btn"
                   key={i}
                   style={{
                     padding: "4px 0",
@@ -897,6 +1014,7 @@ function MonthPicker({
           </div>
 
           <button
+            className="app-btn"
             style={{
               marginTop: 8,
               width: "100%",
