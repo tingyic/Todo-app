@@ -27,6 +27,13 @@ function addDays(d: Date, n: number) {
   return x;
 }
 
+function formatDateKey(d: Date) {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const dd = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${dd}`;
+}
+
 function timeToY(date: Date) {
   return (date.getHours() + date.getMinutes() / 60) * HOUR_HEIGHT;
 }
@@ -50,6 +57,20 @@ type PinnedTask = {
   completed: boolean;
 };
 
+type Instance = {
+  templateId: string;
+  id: string; // `${templateId}::YYYY-MM-DD`
+  title: string;
+  date: Date;
+  dayIndex: number;
+  start: string;
+  end: string;
+  priority: "low" | "medium" | "high";
+  completed: boolean;
+  template: TimetableTask;
+  notes?: string;
+};
+
 const parseTimeToMinutes = (TimetableEditor as TimetableEditorWithHelpers).parseTimeToMinutes!;
 
 function loadTimetableFromStorage(): TimetableTask[] {
@@ -69,6 +90,85 @@ function saveTimetableToStorage(tasks: TimetableTask[]) {
   } catch {
     // ignore
   }
+}
+
+function occursOnDate(template: TimetableTask, date: Date): boolean {
+  const dateKey = formatDateKey(date);
+  
+  if (template.oneOffDate) {
+    return template.oneOffDate === dateKey;
+  }
+
+  if (template.dayIndex % 7 !== date.getDay()) return false;
+
+  const r = template.recurrence;
+  if (!r) return true; // no recurrence = repeat weekly forever
+
+  if (r.startDate) {
+    const startD = new Date(r.startDate + "T00:00:00");
+    if (date < startD) return false;
+  }
+
+  if (r.endDate) {
+    const endD = new Date(r.endDate + "T23:59:59");
+    if (date > endD) return false;
+  }
+
+  if (r.count && r.startDate) {
+    const startD = new Date(r.startDate + "T00:00:00");
+    const diffDays = Math.floor((date.getTime() - startD.getTime()) / (24 * 60 * 60 * 1000));
+    const weeksSince = Math.floor(diffDays / 7);
+    if (weeksSince < 0) return false;
+    if ((weeksSince % (r.interval ?? 1)) !== 0) return false;
+    const occIndex = Math.floor(weeksSince / (r.interval ?? 1));
+    return occIndex < (r.count ?? 0);
+  }
+
+  if (r.startDate) {
+    const startD = new Date(r.startDate + "T00:00:00");
+    const diffDays = Math.floor((date.getTime() - startD.getTime()) / (24 * 60 * 60 * 1000));
+    const weeksSince = Math.floor(diffDays / 7);
+    if (weeksSince < 0) return false;
+    return (weeksSince % (r.interval ?? 1)) === 0;
+  }
+
+  return true;
+}
+
+function generateInstancesForWeek(templates: TimetableTask[], weekStartDate: Date): Instance[] {
+  const res: Instance[] = [];
+
+  for (const tpl of templates) {
+    for (let i = 0; i < 7; i++) {
+      const d = addDays(weekStartDate, i);
+      if (!occursOnDate(tpl, d)) continue;
+      const dateKey = formatDateKey(d);
+
+      // check exception (deleted)
+      const exc = (tpl.exceptions ?? []).find(x => x.date === dateKey);
+      if (exc && exc.deleted) continue;
+
+      const overr = exc?.override ?? {};
+      const inst: Instance = {
+        templateId: tpl.id,
+        id: `${tpl.id}::${dateKey}`,
+        title: overr.title ?? tpl.title,
+        date: d,
+        dayIndex: d.getDay(),
+        start: overr.start ?? tpl.start,
+        end: overr.end ?? tpl.end,
+        priority: overr.priority ?? tpl.priority,
+        completed: false,
+        template: tpl,
+        notes: overr.notes ?? tpl.notes,
+      };
+      res.push(inst);
+    }
+  }
+
+  // sort by date/time
+  res.sort((a, b) => a.date.getTime() - b.date.getTime() || (parseTimeToMinutes(a.start) ?? 0) - (parseTimeToMinutes(b.start) ?? 0));
+  return res;
 }
 
 export default function WeeklyCalendar({ referenceDate, todos, onOpenTask, showToast }: Props) {
@@ -207,6 +307,73 @@ export default function WeeklyCalendar({ referenceDate, todos, onOpenTask, showT
     return map;
   }, [days, pinnedTasks]);
 
+
+  const [timetableTasks, setTimetableTasks] = useState<TimetableTask[]>(() => {
+    const fromStorage = loadTimetableFromStorage();
+    if (fromStorage.length > 0) return fromStorage;
+    // fallback examples
+    return [
+      {
+        id: "tt-1",
+        title: "CS2040S Lecture",
+        dayIndex: 1,
+        start: "10:00",
+        end: "12:00",
+        priority: "high",
+        tags: ["lecture"],
+      },
+      {
+        id: "tt-2",
+        title: "Group Meeting CS2103T",
+        dayIndex: 1,
+        start: "10:00",
+        end: "11:45",
+        priority: "medium",
+        tags: ["meeting"],
+      },
+      {
+        id: "tt-3",
+        title: "CS1010 Tutorial TA",
+        dayIndex: 5,
+        start: "13:00",
+        end: "14:15",
+        priority: "low",
+        tags: ["tutorial"],
+      },
+    ];
+  });
+  
+  const instances = useMemo(() => generateInstancesForWeek(timetableTasks, weekStart), [timetableTasks, weekStart]);
+  
+  function applyInstanceEditOnly(templateId: string, date: Date, override: Partial<Omit<TimetableTask, "id" | "exceptions" | "recurrence">>) {
+    setTimetableTasks(prev => prev.map(t => {
+      if (t.id !== templateId) return t;
+      const dateKey = formatDateKey(date);
+      const ex = [...(t.exceptions ?? [])];
+      const idx = ex.findIndex(x => x.date === dateKey);
+      const entry = { date: dateKey, override };
+      if (idx === -1) ex.push(entry);
+      else ex[idx] = { ...ex[idx], override: { ...ex[idx].override, ...override } };
+      return { ...t, exceptions: ex };
+    }));
+    showToast?.("This occurence updated", 900);
+    play("click", false);
+  }
+
+  function applyInstanceDeleteOnly(templateId: string, date: Date) {
+    setTimetableTasks(prev => prev.map(t => {
+      if (t.id !== templateId) return t;
+      const dateKey = formatDateKey(date);
+      const ex = [...(t.exceptions ?? [])];
+      const idx = ex.findIndex(x => x.date === dateKey);
+      if (idx === -1) ex.push({ date: dateKey, deleted: true });
+      else ex[idx] = { ...ex[idx], deleted: true, override: ex[idx].override };
+      return { ...t, exceptions: ex };
+    }));
+    showToast?.("This occurence deleted", 900);
+    play("delete", false);
+  }  
+
   const maxVisibleLines = useMemo(() => {
     let max = 0;
     for (const [dayKey, tasks] of tasksByDay.entries()) {
@@ -298,47 +465,20 @@ export default function WeeklyCalendar({ referenceDate, todos, onOpenTask, showT
     };
   }
 
-  const [timetableTasks, setTimetableTasks] = useState<TimetableTask[]>(() => {
-    const fromStorage = loadTimetableFromStorage();
-    if (fromStorage.length > 0) return fromStorage;
-    // fallback examples
-    return [
-      {
-        id: "tt-1",
-        title: "CS2040S Lecture",
-        dayIndex: 1,
-        start: "10:00",
-        end: "12:00",
-        priority: "high",
-        tags: ["lecture"],
-      },
-      {
-        id: "tt-2",
-        title: "Group Meeting CS2103T",
-        dayIndex: 1,
-        start: "10:00",
-        end: "11:45",
-        priority: "medium",
-        tags: ["meeting"],
-      },
-      {
-        id: "tt-3",
-        title: "CS1010 Tutorial TA",
-        dayIndex: 5,
-        start: "13:00",
-        end: "14:15",
-        priority: "low",
-        tags: ["tutorial"],
-      },
-    ];
-  });
-
   useEffect(() => {
     saveTimetableToStorage(timetableTasks);
   }, [timetableTasks]);
 
   function addTimetableTask(task: Omit<TimetableTask, "id">) {
-    const t: TimetableTask = { ...task, id: `tt-${Date.now()}-${Math.floor(Math.random() * 1000)}` };
+    let taskToStore: Omit<TimetableTask, "id"> = task;
+
+    if (!task.recurrence) {
+      const oneDate = addDays(weekStart, task.dayIndex);
+      const dateKey = formatDateKey(oneDate);
+      taskToStore = { ...task, oneOffDate: dateKey };
+    }
+
+    const t: TimetableTask = { ...taskToStore, id: `tt-${Date.now()}-${Math.floor(Math.random() * 1000)}` };
     setTimetableTasks(prev => [...prev, t]);
     play("click", false);
     haptic(10);
@@ -352,53 +492,51 @@ export default function WeeklyCalendar({ referenceDate, todos, onOpenTask, showT
     showToast?.("Timetable task updated", 800);
   }
 
-  const timetableLayout = useMemo(() => {
+  const instanceLayout = useMemo(() => {
     const map = new Map<string, { colIndex: number; colCount: number }>();
 
-    for (let day = 0; day < 7; day++) {
-      const events = timetableTasks.filter(e => e.dayIndex === day);
-      if (events.length === 0) continue;
+    // group instances by dayIndex
+    const byDay = new Map<number, (Instance & { startMin: number; endMin: number })[]>();
+    for (const inst of instances) {
+      const s = parseTimeToMinutes(inst.start);
+      const e = parseTimeToMinutes(inst.end);
+      if (s === null || e === null) continue;
+      const arr = byDay.get(inst.dayIndex) ?? [];
+      arr.push({ ...inst, startMin: s, endMin: e });
+      byDay.set(inst.dayIndex, arr);
+    }
 
-      const sorted = events
-        .map(e => {
-          const startMin = parseTimeToMinutes(e.start);
-          const endMin = parseTimeToMinutes(e.end);
-          return startMin === null || endMin === null
-            ? null
-            : { ...e, startMin, endMin };
-        })
-        .filter((x): x is (TimetableTask & { startMin: number; endMin: number }) => x !== null)
-        .sort((a, b) => a.startMin - b.startMin);
+    for (const [, arr] of byDay.entries()) {
+      arr.sort((a, b) => a.startMin - b.startMin);
 
       const colsEnd: number[] = [];
       const assignments: { id: string; col: number }[] = [];
 
-      for (const tasks of sorted) {
+      for (const it of arr) {
         let placedCol = -1;
         for (let c = 0; c < colsEnd.length; c++) {
-          if (tasks.startMin >= colsEnd[c]) {
+          if (it.startMin >= colsEnd[c]) {
             placedCol = c;
             break;
           }
         }
         if (placedCol === -1) {
           placedCol = colsEnd.length;
-          colsEnd.push(tasks.endMin);
+          colsEnd.push(it.endMin);
         } else {
-          colsEnd[placedCol] = tasks.endMin;
+          colsEnd[placedCol] = it.endMin;
         }
-        assignments.push({ id: tasks.id, col: placedCol });
+        assignments.push({ id: it.id, col: placedCol });
       }
 
       const finalColCount = Math.max(1, colsEnd.length);
-
       for (const a of assignments) {
         map.set(a.id, { colIndex: a.col, colCount: finalColCount });
       }
     }
 
     return map;
-  }, [timetableTasks]);
+  }, [instances]);
 
   const timedHeight = 24 * HOUR_HEIGHT;
   const halfHour = HOUR_HEIGHT / 2;
@@ -409,20 +547,98 @@ export default function WeeklyCalendar({ referenceDate, todos, onOpenTask, showT
   const [editTimetableId, setEditTimetableId] = useState<string | null>(null);
   const [editTimetablePrefill, setEditTimetablePrefill] = useState<Partial<TimetableTask> | undefined>(undefined);
 
-  function startEditTimetable(id: string) {
+  const [editingInstanceDate, setEditingInstanceDate] = useState<Date | null>(null);
+
+  function startEditTimetable(id: string, instanceDate?: Date | null) {
     const t = timetableTasks.find(x => x.id === id);
     if (!t) return;
+
+    if (instanceDate) {
+      const dateKey = formatDateKey(instanceDate);
+      const exc = (t.exceptions ?? []).find(x => x.date === dateKey);
+      const overr = exc?.override ?? {};
+      setEditTimetablePrefill({ ...t, ...overr });
+      setEditingInstanceDate(instanceDate);
+    } else {
+      setEditTimetablePrefill({ ...t });
+      setEditingInstanceDate(null);
+    }
+
     setEditTimetableId(id);
-    setEditTimetablePrefill({ ...t });
     setEditTimetableOpen(true);
   }
 
   function handleSaveEditTimetable(payload: Omit<TimetableTask, "id">) {
     if (!editTimetableId) return;
-    updateTimetableTask(editTimetableId, payload);
+
+    if (editingInstanceDate) {
+      const applyAll = window.confirm("Apply changes to all occurrences? (Cancel = only this occurrence)");
+      if (applyAll) {
+        updateTimetableTask(editTimetableId, payload);
+      } else {
+        const override: Partial<Omit<TimetableTask, "id" | "exceptions" | "recurrence">> = {
+          title: payload.title,
+          start: payload.start,
+          end: payload.end,
+          priority: payload.priority,
+          tags: payload.tags,
+          dayIndex: payload.dayIndex,
+          notes: payload.notes,
+        };
+        applyInstanceEditOnly(editTimetableId, editingInstanceDate, override);
+      }
+    } else {
+      updateTimetableTask(editTimetableId, payload);
+    }
+
     setEditTimetableOpen(false);
     setEditTimetableId(null);
     setEditTimetablePrefill(undefined);
+    setEditingInstanceDate(null);
+  }
+
+  function deleteThisAndFuture(templateId: string, date: Date) {
+    const endDate = formatDateKey(addDays(date, -1));
+    setTimetableTasks(prev =>
+      prev.map(t => {
+        if (t.id !== templateId) return t;
+        const newRec = {
+          ...(t.recurrence ?? {}),
+          freq: t.recurrence?.freq ?? "weekly",
+          endDate,
+        };
+        return { ...t, recurrence: newRec };
+      })
+    );
+    play("delete", false);
+    haptic(10);
+    showToast?.("This and future occurrences deleted", 900);
+  }
+
+  function handleDeleteFromEditor() {
+    if (!editTimetableId) {
+      setEditTimetableOpen(false);
+      return;
+    }
+
+    if (editingInstanceDate) {
+      const choice = window.prompt("Delete: (1): only this, (2) this and future, (3) all occurences - Enter 1/2/3", "1");
+      if (choice === "3") {
+        // delete entire
+        setTimetableTasks(prev => prev.filter(t => t.id !== editTimetableId));
+      } else if (choice === "2") {
+        // delete current and all future instances
+        deleteThisAndFuture(editTimetableId, editingInstanceDate);
+      } else {
+        // only this instance
+        applyInstanceDeleteOnly(editTimetableId, editingInstanceDate);
+      }
+    }
+
+    setEditTimetableOpen(false);
+    setEditTimetableId(null);
+    setEditTimetablePrefill(undefined);
+    setEditingInstanceDate(null);
   }
 
   function handlePinnedClick(id: string) {
@@ -518,7 +734,7 @@ export default function WeeklyCalendar({ referenceDate, todos, onOpenTask, showT
           }}>
             <div style={{ height: HEADER_HEIGHT, boxSizing: "border-box" }} />
             <div style={{ height: allDayHeight, boxSizing: "border-box", borderBottom: "1px solid var(--app-border)" }} />
-            <div>
+            <div> 
               {Array.from({ length: 24 }).map((_, h) => (
                 <div key={h}>
                   <div style={{ height: HOUR_HEIGHT / 2, fontSize: 11, color: "var(--app-muted)", paddingTop: 2, boxSizing: "border-box" }}>
@@ -668,8 +884,8 @@ export default function WeeklyCalendar({ referenceDate, todos, onOpenTask, showT
             </div>
 
             {/* Timetable tasks */}
-            {timetableTasks.map(tasks => {
-              const layout = timetableLayout.get(tasks.id) ?? { colIndex: 0, colCount: 1 };
+            {instances.map(tasks => {
+              const layout = instanceLayout.get(tasks.id) ?? { colIndex: 0, colCount: 1 };
 
               const startMin = parseTimeToMinutes(tasks.start);
               const endMin = parseTimeToMinutes(tasks.end);
@@ -682,7 +898,7 @@ export default function WeeklyCalendar({ referenceDate, todos, onOpenTask, showT
               const colWidth = dayWidth / layout.colCount;
               const left = dayWidth * tasks.dayIndex + colWidth * layout.colIndex;
 
-              const pStyle = getPriorityStyle(tasks.priority, false);
+              const pStyle = getPriorityStyle(tasks.priority, tasks.completed);
               const background = (pStyle.background as string) ?? "var(--prio-medium-bg)";
               const color = (pStyle.color as string) ?? "var(--prio-medium)";
 
@@ -690,7 +906,7 @@ export default function WeeklyCalendar({ referenceDate, todos, onOpenTask, showT
                 <div
                   key={tasks.id}
                   title={`${tasks.title} ${String(tasks.start)}-${String(tasks.end)}`}
-                  onClick={(e) => { e.stopPropagation(); startEditTimetable(tasks.id); }}
+                  onClick={(e) => { e.stopPropagation(); startEditTimetable(tasks.templateId, tasks.date); }}
                   role="button"
                   style={{
                     position: "absolute",
@@ -714,8 +930,34 @@ export default function WeeklyCalendar({ referenceDate, todos, onOpenTask, showT
                     cursor: "pointer",
                   }}
                 >
-                  <div style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                    {tasks.title}
+                  <div style={{ display: "flex", alignItems: "center", width: "100%", minWidth: 0, gap: 8 }}>
+                    <div style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                      {tasks.title}
+                    </div>
+
+                    {/* notes icon (only show when notes exist) */}
+                    {tasks.notes ? (
+                      <div
+                        aria-hidden
+                        title={tasks.notes}
+                        style={{
+                          flex: "0 0 auto",
+                          display: "inline-flex",
+                          alignItems: "center",
+                          justifyContent: "center",
+                          padding: "2px 6px",
+                          borderRadius: 6,
+                          fontSize: 12,
+                          opacity: 0.95,
+                          background: "rgba(0, 0, 0, 0.06)",
+                          color: "inherit",
+                          marginLeft: 4,
+                          pointerEvents: "auto",
+                        }}
+                      >
+                        📝
+                      </div>
+                    ) : null}
                   </div>
                 </div>
               );
@@ -802,6 +1044,7 @@ export default function WeeklyCalendar({ referenceDate, todos, onOpenTask, showT
         initialDay={new Date().getDay()}
         onClose={() => setAddOpen(false)}
         onSave={payload => {
+          console.log("TimetableEditor onSave payload:", payload);
           addTimetableTask(payload);
         }}
       />
@@ -817,21 +1060,7 @@ export default function WeeklyCalendar({ referenceDate, todos, onOpenTask, showT
           setEditTimetablePrefill(undefined);
         }}
         onSave={payload => handleSaveEditTimetable(payload)}
-        onDelete={() => {
-          if (!editTimetableId) {
-            setEditTimetableOpen(false);
-            setEditTimetableId(null);
-            setEditTimetablePrefill(undefined);
-            return;
-          }
-          setTimetableTasks(prev => prev.filter(t => t.id !== editTimetableId));
-          play("delete", false);
-          haptic(10);
-          setEditTimetableOpen(false);
-          setEditTimetableId(null);
-          setEditTimetablePrefill(undefined);
-          showToast?.("Timetable task deleted", 900);
-        }}
+        onDelete={handleDeleteFromEditor}
       />
     </div>
   );

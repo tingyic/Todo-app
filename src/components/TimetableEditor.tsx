@@ -8,6 +8,21 @@ export type TimetableTask = {
   end: string;   // "HH:mm"
   priority: "low" | "medium" | "high";
   tags?: string[];
+  notes?: string;
+  oneOffDate?: string;
+  recurrence?: {
+    freq: "weekly";
+    interval?: number; // every N weeks
+    startDate?: string; // first date when recurrence applies
+    endDate?: string; // last date when recurrence applies
+    count?: number; // number of occurences
+  };
+
+  exceptions?: {
+    date: string;
+    deleted?: true;
+    override?: Partial<Omit<TimetableTask, "id" | "exceptions" | "recurrence">>;
+  }[];
 };
 
 type Props = {
@@ -45,12 +60,23 @@ const TimetableEditor: TimetableEditorWithHelpers = function TimetableEditor({
   onDelete,
 }: Props) {
   const modalRef = useRef<HTMLDivElement | null>(null);
+  const recStartRef = useRef<HTMLInputElement | null>(null);
+  const recEndRef = useRef<HTMLInputElement | null>(null);
+
   const [title, setTitle] = useState(prefill?.title ?? "");
   const [dayIndex, setDayIndex] = useState<number>(prefill?.dayIndex ?? initialDay);
   const [start, setStart] = useState(prefill?.start ?? "09:00");
   const [end, setEnd] = useState(prefill?.end ?? "10:00");
   const [priority, setPriority] = useState<TimetableTask["priority"]>(prefill?.priority ?? "medium");
   const [tags, setTags] = useState<string>((prefill?.tags ?? []).join?.(",") ?? "");
+  const [notes, setNotes] = useState<string>(prefill?.notes ?? "");
+
+  // recurrence
+  const [isRecurring, setIsRecurring] = useState<boolean>(() => !!prefill?.recurrence);
+  const [interval, setInterval] = useState<string>(() => String(prefill?.recurrence?.interval ?? 1));
+  const [recStart, setRecStart] = useState<string | "">(() => prefill?.recurrence?.startDate ?? "");
+  const [recEnd, setRecEnd] = useState<string | "">(() => prefill?.recurrence?.endDate ?? "");
+  const [recCount, setRecCount] = useState<string>(() => prefill?.recurrence?.count ? String(prefill?.recurrence?.count) : "");
 
   const [confirmingDelete, setConfirmingDelete] = useState(false);
 
@@ -63,6 +89,12 @@ const TimetableEditor: TimetableEditorWithHelpers = function TimetableEditor({
     setEnd(prefill?.end ?? "10:00");
     setPriority(prefill?.priority ?? "medium");
     setTags((prefill?.tags ?? []).join?.(",") ?? "");
+    setNotes(prefill?.notes ?? "");
+    setIsRecurring(!!prefill?.recurrence);
+    setInterval(String(prefill?.recurrence?.interval ?? 1));
+    setRecStart(prefill?.recurrence?.startDate ?? "");
+    setRecEnd(prefill?.recurrence?.endDate ?? "");
+    setRecCount(prefill?.recurrence?.count ? String(prefill?.recurrence?.count) : "");
     setConfirmingDelete(false);
   }, [open, prefill, initialDay]);
 
@@ -90,15 +122,44 @@ const TimetableEditor: TimetableEditorWithHelpers = function TimetableEditor({
       alert("End time must be after start time");
       return;
     }
+
+    const intervalNum = isRecurring ? (Number.parseInt(interval || "0", 10) || 0) : 0;
+    const countNum = isRecurring && recCount ? (Number.parseInt(recCount, 10) || 0) : undefined;
+
+    if (isRecurring && intervalNum <= 0) {
+      alert("Recurrence interval must be a positive integer (every N weeks).");
+      return;
+    }
+    if (isRecurring && typeof countNum === "number" && countNum < 2) {
+      alert("Recurrence count must be at least 2 (untick repeat weekly box for single events)");
+      return;
+    }
+
     const tagList = tags.split(",").map(t => t.trim()).filter(Boolean);
-    onSave({
+
+    const payload: Omit<TimetableTask, "id"> = {
       title: title.trim(),
       dayIndex,
       start,
       end,
       priority,
       tags: tagList,
-    });
+      notes: notes.trim() || undefined,
+    };
+
+    if (isRecurring) {
+      payload.recurrence = {
+        freq: "weekly",
+        interval: intervalNum > 0 ? intervalNum : 1,
+        ...(recStart ? { startDate: recStart } : {}),
+        ...(recEnd ? { endDate: recEnd } : {}),
+        ...(typeof countNum === "number" && countNum >= 2 ? { count: countNum } : {}),
+      };
+    } else {
+      payload.recurrence = undefined;
+    }
+
+    onSave(payload);
     onClose();
   }
 
@@ -113,6 +174,23 @@ const TimetableEditor: TimetableEditorWithHelpers = function TimetableEditor({
     boxSizing: "border-box",
     WebkitAppearance: "none",
     appearance: "none",
+    background: "var(--app-input-bg)",
+    color: "var(--app-text)",
+    border: "1px solid var(--app-border)",
+  };
+
+  const smallInputStyle: React.CSSProperties = {
+    ...layoutInputStyle,
+    padding: 6,
+    height: "36px",
+  };
+
+  const calendarButtonStyle: React.CSSProperties = {
+    padding: "6px 8px",
+    borderRadius: 8,
+    border: "1px solid var(--app-border)",
+    background: "transparent",
+    cursor: "pointer",
   };
 
   return (
@@ -138,6 +216,8 @@ const TimetableEditor: TimetableEditorWithHelpers = function TimetableEditor({
         style={{
           width: 420,
           maxWidth: "94%",
+          maxHeight: "90vh",
+          overflowY: "auto",
           background: "var(--app-card)",
           border: "1px solid var(--app-border)",
           borderRadius: 12,
@@ -152,32 +232,59 @@ const TimetableEditor: TimetableEditorWithHelpers = function TimetableEditor({
         <div style={{ display: "grid", gap: 8 }}>
           <label style={{ display: "flex", flexDirection: "column", fontSize: 13, flex: 1 }}>
             Title
-            <input className="editor-input" value={title} onChange={e => setTitle(e.target.value)} style={layoutInputStyle} />
+            <input
+              className="editor-input"
+              value={title}
+              onChange={e => setTitle(e.target.value)}
+              style={layoutInputStyle}
+            />
           </label>
 
           <div style={{ display: "flex", gap: 8 }}>
             <label style={{ display: "flex", flexDirection: "column", fontSize: 13, flex: 1 }}>
               Day
-              <select className="editor-input" value={dayIndex} onChange={e => setDayIndex(Number(e.target.value))} style={layoutInputStyle}>
+              <select
+                className="editor-input"
+                value={dayIndex}
+                onChange={e => setDayIndex(Number(e.target.value))}
+                style={layoutInputStyle}
+              >
                 {DAY_LABELS.map((d, i) => <option key={i} value={i}>{d}</option>)}
               </select>
             </label>
 
             <label style={{ display: "flex", flexDirection: "column", fontSize: 13 }}>
               Start
-              <input className="editor-input" type="time" value={start} onChange={e => setStart(e.target.value)} style={layoutInputStyle} />
+              <input
+                className="editor-input"
+                type="time"
+                value={start}
+                onChange={e => setStart(e.target.value)}
+                style={layoutInputStyle}
+              />
             </label>
 
             <label style={{ display: "flex", flexDirection: "column", fontSize: 13 }}>
               End
-              <input className="editor-input" type="time" value={end} onChange={e => setEnd(e.target.value)} style={layoutInputStyle} />
+              <input
+                className="editor-input"
+                type="time"
+                value={end}
+                onChange={e => setEnd(e.target.value)}
+                style={layoutInputStyle}
+              />
             </label>
           </div>
 
           <div style={{ display: "flex", gap: 8 }}>
             <label style={{ display: "flex", flexDirection: "column", fontSize: 13 }}>
               Priority
-              <select className="editor-input" value={priority} onChange={e => setPriority(e.target.value as TimetableTask["priority"])} style={layoutInputStyle}>
+              <select
+                className="editor-input"
+                value={priority}
+                onChange={e => setPriority(e.target.value as TimetableTask["priority"])}
+                style={layoutInputStyle}
+              >
                 <option value="high">High</option>
                 <option value="medium">Medium</option>
                 <option value="low">Low</option>
@@ -186,8 +293,125 @@ const TimetableEditor: TimetableEditorWithHelpers = function TimetableEditor({
 
             <label style={{ display: "flex", flexDirection: "column", fontSize: 13, flex: 1 }}>
               Tags (comma-separated)
-              <input className="editor-input" value={tags} onChange={e => setTags(e.target.value)} placeholder="e.g. lecture, lab" style={layoutInputStyle} />
+              <input
+                className="editor-input"
+                value={tags}
+                onChange={e => setTags(e.target.value)}
+                placeholder="e.g. lecture, lab"
+                style={layoutInputStyle}
+              />
             </label>
+          </div>
+
+          {/* Notes */}
+          <label style={{ display: "flex", flexDirection: "column", fontSize: 13 }}>
+            Notes (optional)
+            <textarea
+              value={notes}
+              onChange={e => setNotes(e.target.value)}
+              placeholder="e.g: Project X / pre-read lecture 2 slides"
+              style={{ ...layoutInputStyle, minHeight: 80, resize: "vertical" }}
+            />
+          </label>
+
+          {/* Recurrence controls */}
+          <div style={{ borderTop: "1px dashed var(--app-border)", paddingTop: 8, display: "flex", gap: 12, alignItems: "center" }}>
+            <label style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <input type="checkbox" checked={isRecurring} onChange={e => setIsRecurring(e.target.checked)} />
+              <span style={{ fontSize: 13 }}>Repeat weekly</span>
+            </label>
+
+            {isRecurring && (
+              <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                  <div style={{ fontSize: 13 }}>Every</div>
+                  <input
+                    type="text"
+                    value={interval}
+                    onChange={e => {
+                      const v = e.target.value.replace(/[^\d]/g, "");
+                      setInterval(v);
+                    }}
+                    style={{ width: 64, ...smallInputStyle }}
+                    placeholder="1"
+                  />
+                  <div style={{ fontSize: 13 }}>week(s)</div>
+                </div>
+
+                <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                  <div style={{ fontSize: 13 }}>Start</div>
+                  <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                    <input
+                      ref={recStartRef}
+                      type="date"
+                      value={recStart}
+                      onChange={e => setRecStart(e.target.value)}
+                      style={{ ...smallInputStyle }}
+                    />
+                    <button
+                      type="button"
+                      style={calendarButtonStyle}
+                      title="Open calendar"
+                      onClick={() => {
+                        const input = recStartRef.current;
+                        if (!input) return;
+
+                        if (typeof input.showPicker === "function") {
+                          input.showPicker();
+                        } else {
+                          input.focus();
+                        }
+                      }}
+                    >
+                      📅
+                    </button>
+                  </div>
+                </div>
+
+                <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                  <div style={{ fontSize: 13 }}>End</div>
+                  <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                    <input
+                      ref={recEndRef}
+                      type="date"
+                      value={recEnd}
+                      onChange={e => setRecEnd(e.target.value)}
+                      style={{ ...smallInputStyle }}
+                    />
+                    <button
+                      type="button"
+                      style={calendarButtonStyle}
+                      title="Open calendar"
+                      onClick={() => {
+                        const input = recEndRef.current;
+                        if (!input) return;
+
+                        if (typeof input.showPicker === "function") {
+                          input.showPicker();
+                        } else {
+                          input.focus();
+                        }
+                      }}
+                    >
+                      📅
+                    </button>
+                  </div>
+
+                  <div style={{ fontSize: 13 }}>or</div>
+
+                  <input
+                    type="text"
+                    value={recCount}
+                    onChange={e => {
+                      const v = e.target.value.replace(/[^\d]/g, "");
+                      setRecCount(v);
+                    }}
+                    placeholder="count (≥ 2)"
+                    style={{ width: 80, ...smallInputStyle }}
+                  />
+                </div>
+              </div>
+            )}
           </div>
 
           <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 6 }}>
@@ -199,7 +423,7 @@ const TimetableEditor: TimetableEditorWithHelpers = function TimetableEditor({
             >
               Cancel
             </button>
-            
+
             {prefill && (
               <>
                 {!confirmingDelete ? (

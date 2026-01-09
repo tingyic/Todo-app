@@ -1,7 +1,7 @@
 {
     "name": "todo-app",
     "private": true,
-    "version": "2.3.3",
+    "version": "2.3.4",
     "type": "module",
     "main": "main.js",
     "scripts": {
@@ -29,7 +29,7 @@
         "win": {
             "icon": "build/tray-icon.ico",
             "target": [
-            "nsis"
+                "nsis"
             ],
             "artifactName": "${productName}-${version}-Setup-${arch}.${ext}"
         },
@@ -47,6 +47,7 @@
         }
     },
     "dependencies": {
+        "baseline-browser-mapping": "^2.9.11",
         "react": "^19.1.1",
         "react-dom": "^19.1.1"
     },

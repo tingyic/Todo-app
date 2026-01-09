@@ -801,7 +801,6 @@ export default function App() {
                 showToast("Task added", 900);
               }}
               onOpenTask={(id) => {
-                // reuse same behavior as annual calendar -> open list + focus task
                 setViewWithFeedback("list");
                 setSelectedId(id);
                 showToast("Opened task in list", 800);
@@ -849,7 +848,7 @@ export default function App() {
               reindeer
             </a>
           </div>
-          <div> Version 2.3.3</div>
+          <div> Version 2.3.4</div>
         </footer>
       </div>
 
