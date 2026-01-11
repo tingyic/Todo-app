@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import React, { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from "react";
 import { play, haptic } from "../utils/sound";
 import type { Todo } from "../types";
 import { parseLocalDateTime } from "../utils/dates";
@@ -11,6 +11,8 @@ const HEADER_HEIGHT = 48;
 const DAY_LABELS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 const MAX_PINNED_PER_DAY = 5;
 const TIMETABLE_STORAGE_KEY = "timetable:v1";
+const CREATE_LONG_PRESS_MS = 200;
+const MOVE_THRESHOLD_PX = 8;
 
 function startOfWeek(d: Date) {
   const date = new Date(d);
@@ -38,6 +40,18 @@ function timeToY(date: Date) {
   return (date.getHours() + date.getMinutes() / 60) * HOUR_HEIGHT;
 }
 
+function yToMinutes(y: number) {
+  const mins = (y / HOUR_HEIGHT) * 60;
+  return Math.max(0, Math.min(24 * 60, mins));
+}
+
+function minutesToHHMM(mins: number) {
+  const hh = Math.floor(mins / 60);
+  const mm = Math.floor(mins % 60);
+  const pad = (n : number) => String(n).padStart(2, "0");
+  return `${pad(hh)}:${pad(mm)}`;
+}
+
 function isSameWeek(a: Date, b: Date) {
   return startOfWeek(a).getTime() === startOfWeek(b).getTime();
 }
@@ -47,6 +61,7 @@ type Props = {
   todos: Todo[];
   onOpenTask?: (id: string) => void;
   showToast?: (msg: string, ms?: number) => void;
+  onHistoryChange?: (state: { canUndo: boolean; canRedo: boolean }) => void;
 };
 
 type PinnedTask = {
@@ -69,6 +84,13 @@ type Instance = {
   completed: boolean;
   template: TimetableTask;
   notes?: string;
+};
+
+type WeeklyCalendarHandle = {
+  undo: () => void;
+  redo: () => void;
+  canUndo: () => boolean;
+  canRedo: () => boolean;
 };
 
 const parseTimeToMinutes = (TimetableEditor as TimetableEditorWithHelpers).parseTimeToMinutes!;
@@ -171,7 +193,7 @@ function generateInstancesForWeek(templates: TimetableTask[], weekStartDate: Dat
   return res;
 }
 
-export default function WeeklyCalendar({ referenceDate, todos, onOpenTask, showToast }: Props) {
+const WeeklyCalendar = forwardRef<WeeklyCalendarHandle | null, Props>(function WeeklyCalendar({ referenceDate, todos, onOpenTask, showToast, onHistoryChange }, ref) {
   const [now, setNow] = useState(() => new Date());
   const scrollRef = useRef<HTMLDivElement | null>(null);
 
@@ -264,6 +286,143 @@ export default function WeeklyCalendar({ referenceDate, todos, onOpenTask, showT
     };
   }, [nowPinned, scrollRef]);
 
+  const createTimerRef = useRef<number | null>(null);
+  const pointerStartRef = useRef<{ x: number; y: number; dayIndex: number; } | null>(null);
+  const [isCreating, setIsCreating] = useState(false);
+  const [createStartMin, setCreateStartMin] = useState<number | null>(null);
+  const [createEndMin, setCreateEndMin] = useState<number | null>(null);
+  const [createDayIndex, setCreateDayIndex] = useState<number | null>(null);
+
+  function clearCreateTimer() {
+    if (createTimerRef.current) {
+      window.clearTimeout(createTimerRef.current);
+      createTimerRef.current = null;
+    }
+  }
+
+  function startCreateMode(startY: number, dayIndex: number, targetEl: Element, pointerId?: number) {
+    const mins = yToMinutes(startY);
+    const snapped = Math.floor(mins / 30) * 30;
+    setCreateStartMin(snapped);
+    setCreateEndMin(snapped + 30);
+    setCreateDayIndex(dayIndex);
+    setIsCreating(true);
+
+    const capTarget = targetEl as unknown as { setPointerCapture?: (id: number) => void };
+    try {
+      if (capTarget.setPointerCapture && pointerId != null) {
+        capTarget.setPointerCapture(pointerId);
+      }
+    } catch {
+      // empty
+    }
+  }
+
+  function finaliseCreate(e?: React.PointerEvent | null) {
+    clearCreateTimer();
+    const s = createStartMin;
+    const t = createEndMin;
+    const dIndex = createDayIndex;
+
+    try {
+      if (e) {
+        const relTarget = e.target as unknown as { releasePointerCapture?: (id: number) => void };
+        relTarget.releasePointerCapture?.(e.pointerId);
+      }
+    } catch {
+      // empty
+    }
+
+    pointerStartRef.current = null;
+    setIsCreating(false);
+
+    if (s == null || t == null || dIndex == null) {
+      setCreateStartMin(null);
+      setCreateEndMin(null);
+      setCreateDayIndex(null);
+      return;
+    }
+
+    const prefill: Partial<TimetableTask> = {
+      dayIndex: dIndex,
+      start: minutesToHHMM(s),
+      end: minutesToHHMM(t),
+      priority: "medium",
+      title: "",
+    };
+
+    setAddPrefill(prefill);
+    setAddOpen(true);
+
+    setCreateStartMin(null);
+    setCreateEndMin(null);
+    setCreateDayIndex(null);
+  }
+
+  function handleTimedPointerDown(e: React.PointerEvent) {
+    if (e.button !== 0) return;
+    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+    const relX = e.clientX - rect.left;
+    const dayWidthPx = rect.width / 7;
+    const dayIndex = Math.min(6, Math.max(0, Math.floor(relX / dayWidthPx)));
+
+    pointerStartRef.current = { x: e.clientX, y: e.clientY, dayIndex };
+
+    const isTouch = e.pointerType === "touch";
+
+    if (isTouch) {
+      createTimerRef.current = window.setTimeout(() => {
+        startCreateMode(pointerStartRef.current!.y - rect.top, dayIndex, e.currentTarget as Element, e.pointerId);
+        createTimerRef.current = null;
+      }, CREATE_LONG_PRESS_MS);
+    } else {
+      startCreateMode(e.clientY - rect.top, dayIndex, e.currentTarget as Element, e.pointerId)
+    }
+  }
+
+  function handleTimedPointerMove(e: React.PointerEvent) {
+    const started = pointerStartRef.current;
+    if (!started) return;
+
+    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+    const moveDy = Math.abs(e.clientY - started.y);
+
+    if (!isCreating) {
+      if (moveDy > MOVE_THRESHOLD_PX) {
+        clearCreateTimer();
+        pointerStartRef.current = null;
+      }
+      return;
+    }
+
+    e.preventDefault();
+
+    const relY = e.clientY - rect.top;
+    const startMin = createStartMin ?? 0;
+    const currentMinRaw = yToMinutes(relY);
+    const snappedEnd = Math.max(startMin + 30, Math.ceil(currentMinRaw / 30) * 30);
+    setCreateEndMin(snappedEnd);
+  }
+
+  function handleTimedPointerUp(e: React.PointerEvent) {
+    if (isCreating) {
+      finaliseCreate(e);
+    } else {
+      clearCreateTimer();
+      pointerStartRef.current = null;
+    }
+  }
+
+  function handleTimedPointerCancel() {
+    clearCreateTimer();
+    pointerStartRef.current = null;
+    if (isCreating) {
+      setIsCreating(false);
+      setCreateStartMin(null);
+      setCreateEndMin(null);
+    }
+  }
+
   const pinnedTasks = useMemo<PinnedTask[]>(() => {
     return todos
       .filter(t => !!t.due)
@@ -342,11 +501,84 @@ export default function WeeklyCalendar({ referenceDate, todos, onOpenTask, showT
       },
     ];
   });
+
+  const pastRef = useRef<TimetableTask[][]>([]);
+  const futureRef = useRef<TimetableTask[][]>([]);
+  const isApplyingHistoryRef = useRef(false);
+  
+  const lastHistoryRef = useRef({ canUndo: false, canRedo: false });
+
+  const notifyHistoryChange = useCallback(() => {
+    if (!onHistoryChange) return;
+
+    const next = {
+      canUndo: pastRef.current.length > 0,
+      canRedo: futureRef.current.length > 0,
+    };
+
+    const prev = lastHistoryRef.current;
+
+    if (prev.canUndo !== next.canUndo || prev.canRedo !== next.canRedo) {
+      lastHistoryRef.current = next;
+      onHistoryChange(next);
+    }
+  }, [onHistoryChange]);
+
+  const commitChange = useCallback((next: TimetableTask[]) => {
+    if (!isApplyingHistoryRef.current) {
+      const snapshot = JSON.parse(JSON.stringify(timetableTasks)) as TimetableTask[];
+      pastRef.current.push(snapshot);
+      if (pastRef.current.length > 200) pastRef.current.shift();
+      futureRef.current = [];
+    }
+    setTimetableTasks(next);
+    notifyHistoryChange();
+  }, [timetableTasks, notifyHistoryChange]);
+
+  const timetableCanUndo = useCallback(() => pastRef.current.length > 0, []);
+  const timetableCanRedo = useCallback(() => futureRef.current.length > 0, []);
+
+  const timetableUndo = useCallback(() => {
+    if (!timetableCanUndo()) return;
+    isApplyingHistoryRef.current = true;
+    const current = JSON.parse(JSON.stringify(timetableTasks)) as TimetableTask[];
+    const prev = pastRef.current.pop() as TimetableTask[];
+    futureRef.current.unshift(current);
+    setTimetableTasks(prev);
+    isApplyingHistoryRef.current = false;
+    notifyHistoryChange();
+    play("undo", true);
+    showToast?.("Timetable: undone", 900);
+  }, [timetableCanUndo, timetableTasks, notifyHistoryChange, showToast]);
+
+  const timetableRedo = useCallback(() => {
+    if (!timetableCanRedo()) return;
+    isApplyingHistoryRef.current = true;
+    const current = JSON.parse(JSON.stringify(timetableTasks)) as TimetableTask[];
+    const next = futureRef.current.shift() as TimetableTask[];
+    pastRef.current.push(current);
+    setTimetableTasks(next);
+    isApplyingHistoryRef.current = false;
+    notifyHistoryChange();
+    play("redo", true);
+    showToast?.("Timetable: redone", 900);
+  }, [timetableCanRedo, timetableTasks, notifyHistoryChange, showToast]);
+
+  useImperativeHandle(ref, () => ({
+    undo: timetableUndo,
+    redo: timetableRedo,
+    canUndo: timetableCanUndo,
+    canRedo: timetableCanRedo,
+  }), [timetableCanRedo, timetableCanUndo, timetableRedo, timetableUndo]);
+
+  useEffect(() => {
+    saveTimetableToStorage(timetableTasks);
+  }, [timetableTasks]);
   
   const instances = useMemo(() => generateInstancesForWeek(timetableTasks, weekStart), [timetableTasks, weekStart]);
   
   function applyInstanceEditOnly(templateId: string, date: Date, override: Partial<Omit<TimetableTask, "id" | "exceptions" | "recurrence">>) {
-    setTimetableTasks(prev => prev.map(t => {
+    const next = timetableTasks.map(t => {
       if (t.id !== templateId) return t;
       const dateKey = formatDateKey(date);
       const ex = [...(t.exceptions ?? [])];
@@ -355,13 +587,14 @@ export default function WeeklyCalendar({ referenceDate, todos, onOpenTask, showT
       if (idx === -1) ex.push(entry);
       else ex[idx] = { ...ex[idx], override: { ...ex[idx].override, ...override } };
       return { ...t, exceptions: ex };
-    }));
+    });
+    commitChange(next);
     showToast?.("This occurence updated", 900);
     play("click", false);
   }
 
   function applyInstanceDeleteOnly(templateId: string, date: Date) {
-    setTimetableTasks(prev => prev.map(t => {
+    const next = timetableTasks.map(t => {
       if (t.id !== templateId) return t;
       const dateKey = formatDateKey(date);
       const ex = [...(t.exceptions ?? [])];
@@ -369,7 +602,8 @@ export default function WeeklyCalendar({ referenceDate, todos, onOpenTask, showT
       if (idx === -1) ex.push({ date: dateKey, deleted: true });
       else ex[idx] = { ...ex[idx], deleted: true, override: ex[idx].override };
       return { ...t, exceptions: ex };
-    }));
+    });
+    commitChange(next);
     showToast?.("This occurence deleted", 900);
     play("delete", false);
   }  
@@ -479,14 +713,16 @@ export default function WeeklyCalendar({ referenceDate, todos, onOpenTask, showT
     }
 
     const t: TimetableTask = { ...taskToStore, id: `tt-${Date.now()}-${Math.floor(Math.random() * 1000)}` };
-    setTimetableTasks(prev => [...prev, t]);
+    const next = [...timetableTasks, t];
+    commitChange(next);
     play("click", false);
     haptic(10);
     showToast?.("Timetable task added", 900);
   }
 
   function updateTimetableTask(id:string, payload: Omit<TimetableTask, "id">) {
-    setTimetableTasks(prev => prev.map(t => (t.id === id ? { ...t, ...payload } : t)));
+    const next = timetableTasks.map(t => (t.id === id ? { ...t, ...payload } : t));
+    commitChange(next);
     play("click", false);
     haptic(10);
     showToast?.("Timetable task updated", 800);
@@ -542,6 +778,7 @@ export default function WeeklyCalendar({ referenceDate, todos, onOpenTask, showT
   const halfHour = HOUR_HEIGHT / 2;
 
   const [addOpen, setAddOpen] = useState(false);
+  const [addPrefill, setAddPrefill] = useState<Partial<TimetableTask> | undefined>(undefined);
   
   const [editTimetableOpen, setEditTimetableOpen] = useState(false);
   const [editTimetableId, setEditTimetableId] = useState<string | null>(null);
@@ -599,17 +836,16 @@ export default function WeeklyCalendar({ referenceDate, todos, onOpenTask, showT
 
   function deleteThisAndFuture(templateId: string, date: Date) {
     const endDate = formatDateKey(addDays(date, -1));
-    setTimetableTasks(prev =>
-      prev.map(t => {
-        if (t.id !== templateId) return t;
-        const newRec = {
-          ...(t.recurrence ?? {}),
-          freq: t.recurrence?.freq ?? "weekly",
-          endDate,
-        };
-        return { ...t, recurrence: newRec };
-      })
-    );
+    const next = timetableTasks.map(t => {
+      if (t.id !== templateId) return t;
+      const newRec = {
+        ...(t.recurrence ?? {}),
+        freq: t.recurrence?.freq ?? "weekly",
+        endDate,
+      };
+      return { ...t, recurrence: newRec };
+      });
+    commitChange(next);
     play("delete", false);
     haptic(10);
     showToast?.("This and future occurrences deleted", 900);
@@ -625,7 +861,8 @@ export default function WeeklyCalendar({ referenceDate, todos, onOpenTask, showT
       const choice = window.prompt("Delete: (1): only this, (2) this and future, (3) all occurences - Enter 1/2/3", "1");
       if (choice === "3") {
         // delete entire
-        setTimetableTasks(prev => prev.filter(t => t.id !== editTimetableId));
+        const next = timetableTasks.filter(t => t.id !== editTimetableId);
+        commitChange(next);
       } else if (choice === "2") {
         // delete current and all future instances
         deleteThisAndFuture(editTimetableId, editingInstanceDate);
@@ -872,6 +1109,10 @@ export default function WeeklyCalendar({ referenceDate, todos, onOpenTask, showT
               overflow: "visible",
               backgroundImage: `repeating-linear-gradient(to bottom, transparent 0px, transparent ${halfHour - 1}px, var(--app-border) ${halfHour - 1}px, var(--app-border) ${halfHour}px)`
             }}
+            onPointerDown={handleTimedPointerDown}
+            onPointerMove={handleTimedPointerMove}
+            onPointerUp={handleTimedPointerUp}
+            onPointerCancel={handleTimedPointerCancel}
           >
             <div style={{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)", height: "100%" }}>
               {days.map((_, i) => (
@@ -963,6 +1204,35 @@ export default function WeeklyCalendar({ referenceDate, todos, onOpenTask, showT
               );
             })}
 
+            {/* Preview rectangle while drag/click creating */}
+            {isCreating && createStartMin !== null && createEndMin !== null && createDayIndex !== null && (
+              (() => {
+                const topPx = (createStartMin / 60) * HOUR_HEIGHT;
+                const heightPx = Math.max(8, ((createEndMin - createStartMin) / 60) * HOUR_HEIGHT);
+                const dayWidthPerc = 100 / 7;
+                const leftPerc = dayWidthPerc * createDayIndex;
+                return (
+                  <div
+                    aria-hidden
+                    style={{
+                      position: "absolute",
+                      top: topPx,
+                      left: `${leftPerc}%`,
+                      width: `${dayWidthPerc}%`,
+                      height: heightPx,
+                      padding: 6,
+                      boxSizing: "border-box",
+                      borderRadius: 6,
+                      background: "rgba(0, 120, 255, 0.12)",
+                      border: "1px dashed rgba(0, 120, 255, 0.5)",
+                      zIndex: 50,
+                      pointerEvents: "none",
+                    }}
+                  />
+                );
+              })()
+            )}
+
             {/* NOW line inside timed area */}
             {todayIndex !== -1 && (() => {
               const nowForPosition = showNowTooltip ? nowDetailed : now;
@@ -1041,11 +1311,14 @@ export default function WeeklyCalendar({ referenceDate, todos, onOpenTask, showT
       {/* Timetable editor (add) */}
       <TimetableEditor
         open={addOpen}
-        initialDay={new Date().getDay()}
-        onClose={() => setAddOpen(false)}
+        initialDay={addPrefill?.dayIndex ?? new Date().getDay()}
+        prefill={addPrefill}
+        onClose={() => { setAddOpen(false); setAddPrefill(undefined); }}
         onSave={payload => {
           console.log("TimetableEditor onSave payload:", payload);
           addTimetableTask(payload);
+          setAddPrefill(undefined);
+          setAddOpen(false);
         }}
       />
 
@@ -1064,7 +1337,9 @@ export default function WeeklyCalendar({ referenceDate, todos, onOpenTask, showT
       />
     </div>
   );
-}
+});
+
+export default WeeklyCalendar;
 
 function MonthPicker({
   value,
