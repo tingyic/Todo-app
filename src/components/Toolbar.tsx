@@ -14,7 +14,7 @@ type Props = {
   todos: Todo[];
   setTodos: (t: Todo[]) => void;
   showToast: (msg: string, ms?: number) => void;
-  view?: "list" | "year" | "month";
+  view?: "list" | "year" | "month" | "week";
   setView?: (v: "list" | "year" | "month") => void;
 };
 

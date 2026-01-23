@@ -6,9 +6,11 @@ import CelebrateOverlay from "./CelebrationOverlay";
 import HelpButton from "./HelpButton";
 import MonthlyCalendar from "./MonthlyCalendar";
 import ReminderManager from "./ReminderManager";
+import type { TimetableTask } from "./TimetableEditor";
 import TodoEditor from "./TodoEditor";
 import TodoList from "./TodoList";
 import Toolbar from "./Toolbar";
+import WeeklyCalendar from "./WeeklyCalendar";
 
 export default function App() {
   const {
@@ -30,7 +32,7 @@ export default function App() {
 
   const [selectedId, setSelectedId] = useState<string | null>(null);
 
-  const [view, setView] = useState<"list" | "year" | "month">("list");
+  const [view, setView] = useState<"list" | "year" | "month" | "week">("list");
   
   const [filter, setFilter] = useState<"all" | "active" | "completed">("all");
   const [query, setQuery] = useState("");
@@ -154,7 +156,7 @@ export default function App() {
   );
 
   const cardRef = useRef<HTMLDivElement | null>(null);
-  const viewRef = useRef<"list" | "year" | "month">(view);
+  const viewRef = useRef<"list" | "year" | "month" | "week">(view);
   useEffect(() => {
     viewRef.current = view;
   }, [view]);
@@ -263,11 +265,11 @@ export default function App() {
     setViewDragX(0);
   }
 
-  const setViewWithFeedback = useCallback((v:  "list" | "year" | "month") => {
+  const setViewWithFeedback = useCallback((v:  "list" | "year" | "month" | "week") => {
     setView(v);
     play("click", false);
     try {haptic(25);} catch {/* empty */}
-    showToast(v === "year" ? "Year view" : v === "month" ? "Month view" : "List view", 700);
+    showToast(v === "year" ? "Year view" : v === "month" ? "Month view" : v === "week" ? "Week view" : "List view", 700);
   }, [showToast])
 
   useEffect(() => {
@@ -342,14 +344,34 @@ export default function App() {
     play("click", false);
   }, [showToast]);
 
+  const weeklyRef = useRef<{ undo: () => void; redo: () => void; canUndo: () => boolean; canRedo: () => boolean } | null>(null);
+
+  const [weekHistoryState, setWeekHistoryState] = useState({ canUndo: false, canRedo: false });
+
   // handlers that check availability before acting and show toast + sound/haptic
   function handleUndo() {
+    if (viewRef.current === "week") {
+      if (!weeklyRef.current?.canUndo?.()) return;
+      weeklyRef.current.undo?.();
+      showToast("Timetable: undone");
+      play("undo", true);
+      return;
+    }
+
     if (!canUndo) return;
     undo();
     showToast("Undone");
     play("undo", true);
   }
   function handleRedo() {
+    if (viewRef.current === "week") {
+      if (!weeklyRef.current?.canRedo?.()) return;
+      weeklyRef.current.redo?.();
+      showToast("Timetable: redone");
+      play("redo", true);
+      return;
+    }
+
     if (!canRedo) return;
     redo();
     showToast("Redone");
@@ -369,6 +391,8 @@ export default function App() {
     return () => window.removeEventListener("beforeunload", onBeforeUnload);
   }, []);
 
+  const [timetableTasks, setTimetableTasks] = useState<TimetableTask[]>([]);
+
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
       const target = e.target as HTMLElement | null;
@@ -383,18 +407,34 @@ export default function App() {
       if (mod && !shift && key === "z") {
         // Ctrl/Cmd+Z -> undo
         e.preventDefault();
-        if (canUndo) {
-          undo();
-          showToast("Undone");
-          play("undo", true);
+        if (viewRef.current === "week") {
+          if (weeklyRef.current?.canUndo?.()) {
+            weeklyRef.current.undo?.();
+            showToast("Timetable: undone");
+            play("undo", true);
+          }
+        } else {
+          if (canUndo) {
+            undo();
+            showToast("Undone");
+            play("undo", true);
+          }
         }
       } else if ((mod && shift && key === "z") || (mod && key === "y")) {
         // Ctrl/Cmd+Shift+Z OR Ctrl/Cmd+Y -> redo
         e.preventDefault();
-        if (canRedo) {
-          redo();
-          showToast("Redone");
-          play("redo", true);
+        if (viewRef.current === "week") {
+          if (weeklyRef.current?.canRedo?.()) {
+            weeklyRef.current.redo();
+            showToast("Timetable: redone");
+            play("redo", true);
+          }
+        } else {
+          if (canRedo) {
+            redo();
+            showToast("Redone");
+            play("redo", true);
+          }
         }
       }
 
@@ -492,6 +532,8 @@ export default function App() {
     return () => window.removeEventListener("keydown", onKey);
   }, [undo, redo, canUndo, canRedo, toggleTheme, toggleReminders, toggleSound, setFilterWithFeedback, showToast, visible, selectedId, view]);
 
+  const handleWeeklyHistoryChange = useCallback((s: { canUndo: boolean; canRedo: boolean }) => { setWeekHistoryState(s); }, []);
+
   return (
     <div className="min-h-screen bg-app-root flex items-start justify-center py-12 px-4">
       <div 
@@ -512,8 +554,8 @@ export default function App() {
                 onClick={handleUndo}
                 className="btn-plain"
                 title="Undo (Ctrl/Cmd+Z)"
-                disabled={!canUndo}
-                style={{ padding: "6px 10px", opacity: canUndo ? 1 : 0.5 }}
+                disabled={view === "week" ? !weekHistoryState.canUndo : !canUndo}
+                style={{ padding: "6px 10px", opacity: (view === "week" ? weekHistoryState.canUndo : canUndo) ? 1 : 0.5 }}
                 aria-label="Undo"
               >
                 ⤺ Undo
@@ -522,8 +564,8 @@ export default function App() {
                 onClick={handleRedo}
                 className="btn-plain"
                 title="Redo (Ctrl/Cmd+Shift+Z or Ctrl/Cmd+Y)"
-                disabled={!canRedo}
-                style={{ padding: "6px 10px", opacity: canRedo ? 1 : 0.5 }}
+                disabled={view === "week" ? !weekHistoryState.canRedo : !canRedo}
+                style={{ padding: "6px 10px", opacity: (view === "week" ? weekHistoryState.canRedo : canRedo) ? 1 : 0.5 }}
                 aria-label="Redo"
               >
                 ⤻ Redo
@@ -605,10 +647,20 @@ export default function App() {
                 className="btn-plain"
                 onClick={() => setViewWithFeedback("month")}
                 aria-pressed={view === "month"}
-                title="Month"
-                style={{ padding: "6px 10px"}}
+                title="Month view"
+                style={{ padding: "6px 10px" }}
               >
                 Month
+              </button>
+
+              <button
+                className="btn-plain"
+                onClick={() => setViewWithFeedback("week")}
+                aria-pressed={view === "week"}
+                title="Week view"
+                style={{ padding: "6px 10px" }}
+              >
+                Week
               </button>
             </div>
 
@@ -751,7 +803,8 @@ export default function App() {
         )}
 
         <main>
-          {view === "list" ? (
+          {/* List view (hidden when not active) */}
+          <div style={{ display: view === "list" ? "block" : "none" }}>
             <TodoList
               todos={visible}
               dustingIds={dustingIds}
@@ -759,7 +812,7 @@ export default function App() {
               setSelectedId={setSelectedId}
               showToast={showToast}
               onToggle={handleToggleWithFeedback}
-              onRemove={id => {
+              onRemove={(id) => {
                 setSelectedId(prev => (prev === id ? null : prev));
                 remove(id);
                 play("delete", true);
@@ -771,7 +824,10 @@ export default function App() {
                 showToast(toastMsg ?? "Saved", 800);
               }}
             />
-          ) : view === "year" ? (
+          </div>
+
+          {/* Year view */}
+          <div style={{ display: view === "year" ? "block" : "none" }}>
             <AnnualCalendar
               ref={calRef}
               todos={todos}
@@ -781,7 +837,10 @@ export default function App() {
                 showToast("Opened task in list", 800);
               }}
             />
-          ) : (
+          </div>
+
+          {/* Month view */}
+          <div style={{ display: view === "month" ? "block" : "none" }}>
             <MonthlyCalendar
               todos={todos}
               onAddTask={(payload) => {
@@ -790,7 +849,6 @@ export default function App() {
                 showToast("Task added", 900);
               }}
               onOpenTask={(id) => {
-                // reuse same behavior as annual calendar -> open list + focus task
                 setViewWithFeedback("list");
                 setSelectedId(id);
                 showToast("Opened task in list", 800);
@@ -807,7 +865,23 @@ export default function App() {
                 showToast(toastMsg ?? "Saved", 800);
               }}
             />
-          )}
+          </div>
+
+          {/* Week view */}
+          <div style={{ display: view === "week" ? "block" : "none" }}>
+            <WeeklyCalendar
+              ref={weeklyRef}
+              todos={todos}
+              onOpenTask={(id) => {
+                setViewWithFeedback("list");
+                setSelectedId(id);
+                showToast("Opened task in list", 800);
+              }}
+              showToast={showToast}
+              onHistoryChange={handleWeeklyHistoryChange}
+              onTasksChange={tasks => setTimetableTasks(tasks)}
+            />
+          </div>
         </main>
         
         <footer className="mt-6 flex items-center justify-between text-sm text-app-muted">
@@ -828,11 +902,11 @@ export default function App() {
               reindeer
             </a>
           </div>
-          <div> Version 2.2.5</div>
+          <div> Version 2.3.6</div>
         </footer>
       </div>
-
-      <ReminderManager todos={todos} enabled={remindersEnabled} />
+      
+      <ReminderManager todos={todos} timetableTasks={timetableTasks} enabled={remindersEnabled} />
 
       {/* Celebration overlay */}
       {celebrate && <CelebrateOverlay />}

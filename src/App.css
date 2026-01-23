@@ -26,6 +26,9 @@
   --prio-low: #05603a;
   --prio-low-bg: #f0fff8;
   --prio-completed: #9ca3af;
+  --prio-completed-bg: rgba(120, 120, 120, 0.6);
+
+  --prio-completed-text: #4b5563;
 
   /* ---- danger variables (used for delete + clear completed) ---- */
   --danger: #9b1c1c;
@@ -49,6 +52,9 @@
 
   /* ripple */
   --ripple-color: rgba(2, 6, 23, 0.12);
+
+  /* month view, now line */
+  --now-line: #ef4444;
 }
 
 .theme-dark{
@@ -78,6 +84,9 @@
   --prio-low: #7be3a6;
   --prio-low-bg: #083222;
   --prio-completed: #6b7280;
+  --prio-completed-bg: rgba(255, 255, 255, 0.6);
+
+  --prio-completed-text: #d1d5db;
 
   /* danger in dark theme */
   --danger: #ff7b7b;
@@ -101,6 +110,9 @@
 
   /* ripple */
   --ripple-color: rgba(255, 255, 255, 0.12);
+
+  /* month view now line */
+  --now-line: #f87171;
 }
 
 /* =========================
@@ -262,13 +274,7 @@ button.btn-danger {
   border-color: transparent;
 }
 
-/* ensure tag background doesn't clash while struck-through */
 .todo-item.todo-done .tag{ background: transparent; border-color: transparent; }
-
-/* =========================
-   Toolbar / Search / Filters
-   Cover common selector patterns so they flip
-   ========================= */
 
 .toolbar, .header-toolbar{ display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
 
@@ -312,7 +318,6 @@ ul.todo-list li{ list-style:none; }
 .priority-badge.prio-low { background: var(--prio-low-bg); color: var(--prio-low); }
 
 @media (prefers-color-scheme: dark){
-  /* nothing required: variables already handle dark mode */
 }
 
 /* Higher-specificity selectors to beat a plain `button { ... }` rule */
@@ -596,7 +601,6 @@ button.clear-completed.btn-danger:active {
   transform: translateY(0) scale(0.98);
 }
 
-/* make inline confirm buttons look stable and not jitter */
 .todo-col-actions { display:flex; flex-direction:column; align-items:flex-end; gap:8px; }
 
 /* prefer single-line for action buttons when there's space; will still wrap if space is tight */
@@ -998,7 +1002,7 @@ kbd.help-kbd, .help-kbd kbd {
 
 .todo-ripple.show {
   transform: translate(-50%, -50%) scale(1);
-  opacity: 0.06; /* fades out while expanding */
+  opacity: 0.06;
 }
 
 .snooze-stack {
@@ -1361,4 +1365,181 @@ kbd.help-kbd, .help-kbd kbd {
 .mc-task-done {
   color: var(--app-muted);
   text-decoration: line-through;
+}
+
+.weekly-calendar {
+  background: var(--app-bg);
+  color: var(--app-text);
+  border-radius: 14px;
+  overflow: hidden;
+  user-select: none;
+}
+
+.weekly-calendar .time-gutter {
+  border-right: 1px solid var(--app-border);
+  padding-right: 6px;
+}
+
+.weekly-calendar .week-grid {
+  background: repeating-linear-gradient(
+    to bottom,
+    transparent,
+    transparent calc(60px - 1px),
+    var(--app-border) 60px
+  );
+}
+
+.weekly-calendar .week-day {
+  border-left: 1px solid var(--app-border);
+}
+
+.weekly-calendar .now-line {
+  background: var(--now-line);
+}
+
+.weekly-calendar .now-line div {
+  box-shadow: 0 0 0 2px var(--app-bg);
+}
+
+.weekly-calendar .all-day-task {
+  transition: background-color 140ms ease, color 140ms ease, opacity 140ms ease;
+  cursor: default;
+}
+
+.timetable-editor .editor-input {
+  background: var(--app-input-bg);
+  border: 1px solid var(--app-input-border);
+  color: var(--app-text);
+  padding: 8px;
+  border-radius: 8px;
+  box-sizing: border-box;
+  transition: background .12s, border-color .12s, color .12s;
+  -webkit-appearance: none;
+  appearance: none;
+}
+
+.timetable-editor .editor-input::placeholder {
+  color: var(--app-muted);
+}
+
+.timetable-editor .editor-input[type="time"] {
+  background: var(--app-input-bg);
+  border: 1px solid var(--app-input-border);
+  color: var(--app-text);
+}
+
+.timetable-editor .editor-input[type="time"]::-webkit-calendar-picker-indicator {
+  filter: none;
+  opacity: 0.95;
+}
+
+/* selects */
+.timetable-editor select.editor-input {
+  background: var(--app-input-bg);
+  border: 1px solid var(--app-input-border);
+  color: var(--app-text);
+}
+
+.timetable-editor .reminder-option,
+.timetable-editor .reminder-option[aria-pressed="true"] {
+  color: var(--app-text);
+  background: var(--btn-plain-bg);
+  border: 1px solid var(--btn-plain-border);
+}
+
+/* Timetable reminder buttons: inactive vs active */
+.reminder-btn {
+  padding: 6px 8px;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--app-text);
+  border: 1px solid var(--app-border);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  transition: background 180ms ease, color 180ms ease, box-shadow 180ms ease, transform 120ms ease;
+}
+
+.reminder-btn:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 20px rgba(2,6,23,0.04);
+}
+
+/* Active selected state: gradient + readable text + shadow */
+.reminder-btn.active {
+  background: linear-gradient(180deg, var(--help-fab-top, #e6f6ff), var(--help-fab-bottom, #a0d8ff));
+  color: var(--help-fab-text, #06233a);
+  border-color: transparent;
+  box-shadow: 0 10px 30px rgba(2,6,23,0.10);
+}
+
+.theme-dark .reminder-btn.active {
+  background: linear-gradient(180deg, var(--help-fab-top, #083b67), var(--help-fab-bottom, #0b66a6));
+  color: var(--help-fab-text, #fff);
+  box-shadow: 0 10px 30px rgba(0,0,0,0.45);
+}
+
+.reminder-check {
+  font-size: 12px;
+  line-height: 1;
+  opacity: 0.95;
+  display: inline-block;
+  padding-left: 2px;
+}
+
+.reminder-btn:focus {
+  outline: none;
+  box-shadow: 0 0 0 4px rgba(99,102,241,0.08);
+}
+
+.app-btn {
+  padding: 8px 12px;
+  border-radius: 8px;
+  cursor: pointer;
+
+  background: var(--btn-bg);
+  color: var(--app-text);
+  border: 1px solid var(--app-border);
+
+  transition:
+    background 120ms ease,
+    filter 120ms ease,
+    transform 120ms cubic-bezier(0.2, 0.9, 0.2, 1);
+    box-shadow: 160ms ease;
+  will-change: transform, box-shadow;
+  
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+
+.app-btn:hover {
+  filter: brightness(0.95);
+  transform: translateY(-3px);
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.28);
+}
+
+.app-btn:active {
+  transform: translateY(1px);
+  box-shadow: 0 5px 12px rgba(0, 0, 0, 0.22);
+}
+
+.app-btn--danger {
+  background: var(--btn-plain-bg);
+  color: var(--danger);
+  border: 1px solid var(--danger);
+}
+
+.app-btn--danger:hover {
+  filter: brightness(0.95);
+  transform: translateY(-3px);
+  box-shadow: rgba(0, 0, 0, 0.28);
+}
+
+.app-btn:focus {
+  outline: 2px solid rgba(0, 0, 0, 0);
+  box-shadow: 0 0 0 4px rgba(100, 150, 255, 0.06);
 }
