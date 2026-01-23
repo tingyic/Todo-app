@@ -6,6 +6,7 @@ import CelebrateOverlay from "./CelebrationOverlay";
 import HelpButton from "./HelpButton";
 import MonthlyCalendar from "./MonthlyCalendar";
 import ReminderManager from "./ReminderManager";
+import type { TimetableTask } from "./TimetableEditor";
 import TodoEditor from "./TodoEditor";
 import TodoList from "./TodoList";
 import Toolbar from "./Toolbar";
@@ -389,6 +390,8 @@ export default function App() {
     window.addEventListener("beforeunload", onBeforeUnload);
     return () => window.removeEventListener("beforeunload", onBeforeUnload);
   }, []);
+
+  const [timetableTasks, setTimetableTasks] = useState<TimetableTask[]>([]);
 
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
@@ -876,6 +879,7 @@ export default function App() {
               }}
               showToast={showToast}
               onHistoryChange={handleWeeklyHistoryChange}
+              onTasksChange={tasks => setTimetableTasks(tasks)}
             />
           </div>
         </main>
@@ -898,11 +902,11 @@ export default function App() {
               reindeer
             </a>
           </div>
-          <div> Version 2.3.5</div>
+          <div> Version 2.3.6</div>
         </footer>
       </div>
-
-      <ReminderManager todos={todos} enabled={remindersEnabled} />
+      
+      <ReminderManager todos={todos} timetableTasks={timetableTasks} enabled={remindersEnabled} />
 
       {/* Celebration overlay */}
       {celebrate && <CelebrateOverlay />}

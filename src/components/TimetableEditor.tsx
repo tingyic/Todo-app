@@ -10,6 +10,7 @@ export type TimetableTask = {
   tags?: string[];
   notes?: string;
   oneOffDate?: string;
+  reminders?: number[];
   recurrence?: {
     freq: "weekly";
     interval?: number; // every N weeks
@@ -47,6 +48,7 @@ function parseTimeToMinutes(time: string): number | null {
   const hh = Number(m[1]);
   const mm = Number(m[2]);
   if (!Number.isFinite(hh) || !Number.isFinite(mm)) return null;
+  if (hh === 24 && mm === 0) return 24 * 60;
   if (hh < 0 || hh > 23 || mm < 0 || mm > 59) return null;
   return hh * 60 + mm;
 }
@@ -80,6 +82,22 @@ const TimetableEditor: TimetableEditorWithHelpers = function TimetableEditor({
 
   const [confirmingDelete, setConfirmingDelete] = useState(false);
 
+  // reminders
+  const [remindersSet, setRemindersSet] = useState<Set<number>>(
+    () => new Set<number>(prefill?.reminders ?? [])
+  )
+
+  const PRESET_REMINDERS = [60, 30, 10, 5, 1, 0]; // x minutes, 0 = at start
+
+  function toggleReminder(mins: number): void {
+    setRemindersSet((prev: Set<number>) => {
+      const next = new Set<number>(prev);
+      if (next.has(mins)) next.delete(mins);
+      else next.add(mins);
+      return next;
+    });
+  }
+
   useEffect(() => {
     if (!open) return;
 
@@ -96,6 +114,7 @@ const TimetableEditor: TimetableEditorWithHelpers = function TimetableEditor({
     setRecEnd(prefill?.recurrence?.endDate ?? "");
     setRecCount(prefill?.recurrence?.count ? String(prefill?.recurrence?.count) : "");
     setConfirmingDelete(false);
+    setRemindersSet(new Set<number>(prefill?.reminders ?? []));
   }, [open, prefill, initialDay]);
 
   useEffect(() => {
@@ -118,7 +137,9 @@ const TimetableEditor: TimetableEditorWithHelpers = function TimetableEditor({
       alert("Please enter valid times (HH:mm)");
       return;
     }
-    if (e <= s) {
+    
+    const duration = e >= s ? e - s : 24 * 60 - s + e;
+    if (duration <= 0) {
       alert("End time must be after start time");
       return;
     }
@@ -158,6 +179,10 @@ const TimetableEditor: TimetableEditorWithHelpers = function TimetableEditor({
     } else {
       payload.recurrence = undefined;
     }
+
+    const reminders = Array.from(remindersSet).sort((a, b) => a - b);
+    if (reminders.length) payload.reminders = reminders;
+    else payload.reminders = undefined;
 
     onSave(payload);
     onClose();
@@ -412,6 +437,33 @@ const TimetableEditor: TimetableEditorWithHelpers = function TimetableEditor({
                 </div>
               </div>
             )}
+          </div>
+
+          {/* Reminders */}
+          <div style={{ borderTop: "1px dashed var(--app-border)", paddingTop: 8 }}>
+            <div style={{ fontSize: 13, marginBottom: 6 }}>Reminders</div>
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+              {PRESET_REMINDERS.map(mins => {
+                const label = mins === 0 ? "At start" : mins >= 60 ? `${mins / 60}h` : `${mins}m`;
+                const active = remindersSet.has(mins);
+                return (
+                  <button
+                    key={mins}
+                    type="button"
+                    onClick={() => toggleReminder(mins)}
+                    className={`app-btn reminder-btn ${active ? "active" : ""}`}
+                    aria-pressed={active}
+                    title={active ? `${label} (selected)` : label}
+                  >
+                    <span className="reminder-label">{label}</span>
+                    {active && <span className="reminder-check" aria-hidden>✓</span>}
+                  </button>
+                ); 
+              })}
+            </div>
+            <div style={{ fontSize: 12, color: "var(--app-muted)", marginTop: 6 }}>
+              Reminders fire before the task starts.
+            </div>
           </div>
 
           <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 6 }}>

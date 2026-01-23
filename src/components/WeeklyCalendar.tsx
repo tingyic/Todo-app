@@ -1,16 +1,17 @@
-import React, { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from "react";
+import React, { forwardRef, useEffect, useImperativeHandle, useMemo, useRef, useState } from "react";
 import { play, haptic } from "../utils/sound";
 import type { Todo } from "../types";
 import { parseLocalDateTime } from "../utils/dates";
 import TimetableEditor, { type TimetableTask, type TimetableEditorWithHelpers } from "./TimetableEditor";
+import TimetableItem from "./TimetableItem";
+import useTimetable, { generateInstancesForWeek } from "../hooks/useTimetable";
 
 const HOUR_HEIGHT = 120; // px per hour
-const ALL_DAY_TASK_HEIGHT = 24;
-const ALL_DAY_TASK_GAP = 4;
+const ALL_DAY_ITEM_HEIGHT = 24;
+const ALL_DAY_ITEM_GAP = 4;
 const HEADER_HEIGHT = 48;
 const DAY_LABELS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 const MAX_PINNED_PER_DAY = 5;
-const TIMETABLE_STORAGE_KEY = "timetable:v1";
 const CREATE_LONG_PRESS_MS = 200;
 const MOVE_THRESHOLD_PX = 8;
 
@@ -62,9 +63,10 @@ type Props = {
   onOpenTask?: (id: string) => void;
   showToast?: (msg: string, ms?: number) => void;
   onHistoryChange?: (state: { canUndo: boolean; canRedo: boolean }) => void;
+  onTasksChange?: (tasks: TimetableTask[]) => void;
 };
 
-type PinnedTask = {
+type PinnedItem = {
   id: string;
   title: string;
   date: Date;
@@ -78,9 +80,9 @@ type Instance = {
   title: string;
   date: Date;
   dayIndex: number;
-  start: string;
-  end: string;
-  priority: "low" | "medium" | "high";
+  start?: string;
+  end?: string;
+  priority?: "low" | "medium" | "high";
   completed: boolean;
   template: TimetableTask;
   notes?: string;
@@ -95,105 +97,7 @@ type WeeklyCalendarHandle = {
 
 const parseTimeToMinutes = (TimetableEditor as TimetableEditorWithHelpers).parseTimeToMinutes!;
 
-function loadTimetableFromStorage(): TimetableTask[] {
-  try {
-    const raw = localStorage.getItem(TIMETABLE_STORAGE_KEY);
-    if (!raw) return [];
-    const parsed = JSON.parse(raw) as TimetableTask[];
-    if (!Array.isArray(parsed)) return [];
-    return parsed.filter(p => typeof p.id === "string");
-  } catch {
-    return [];
-  }
-}
-function saveTimetableToStorage(tasks: TimetableTask[]) {
-  try {
-    localStorage.setItem(TIMETABLE_STORAGE_KEY, JSON.stringify(tasks));
-  } catch {
-    // ignore
-  }
-}
-
-function occursOnDate(template: TimetableTask, date: Date): boolean {
-  const dateKey = formatDateKey(date);
-  
-  if (template.oneOffDate) {
-    return template.oneOffDate === dateKey;
-  }
-
-  if (template.dayIndex % 7 !== date.getDay()) return false;
-
-  const r = template.recurrence;
-  if (!r) return true; // no recurrence = repeat weekly forever
-
-  if (r.startDate) {
-    const startD = new Date(r.startDate + "T00:00:00");
-    if (date < startD) return false;
-  }
-
-  if (r.endDate) {
-    const endD = new Date(r.endDate + "T23:59:59");
-    if (date > endD) return false;
-  }
-
-  if (r.count && r.startDate) {
-    const startD = new Date(r.startDate + "T00:00:00");
-    const diffDays = Math.floor((date.getTime() - startD.getTime()) / (24 * 60 * 60 * 1000));
-    const weeksSince = Math.floor(diffDays / 7);
-    if (weeksSince < 0) return false;
-    if ((weeksSince % (r.interval ?? 1)) !== 0) return false;
-    const occIndex = Math.floor(weeksSince / (r.interval ?? 1));
-    return occIndex < (r.count ?? 0);
-  }
-
-  if (r.startDate) {
-    const startD = new Date(r.startDate + "T00:00:00");
-    const diffDays = Math.floor((date.getTime() - startD.getTime()) / (24 * 60 * 60 * 1000));
-    const weeksSince = Math.floor(diffDays / 7);
-    if (weeksSince < 0) return false;
-    return (weeksSince % (r.interval ?? 1)) === 0;
-  }
-
-  return true;
-}
-
-function generateInstancesForWeek(templates: TimetableTask[], weekStartDate: Date): Instance[] {
-  const res: Instance[] = [];
-
-  for (const tpl of templates) {
-    for (let i = 0; i < 7; i++) {
-      const d = addDays(weekStartDate, i);
-      if (!occursOnDate(tpl, d)) continue;
-      const dateKey = formatDateKey(d);
-
-      // check exception (deleted)
-      const exc = (tpl.exceptions ?? []).find(x => x.date === dateKey);
-      if (exc && exc.deleted) continue;
-
-      const overr = exc?.override ?? {};
-      const inst: Instance = {
-        templateId: tpl.id,
-        id: `${tpl.id}::${dateKey}`,
-        title: overr.title ?? tpl.title,
-        date: d,
-        dayIndex: d.getDay(),
-        start: overr.start ?? tpl.start,
-        end: overr.end ?? tpl.end,
-        priority: overr.priority ?? tpl.priority,
-        completed: false,
-        template: tpl,
-        notes: overr.notes ?? tpl.notes,
-      };
-      res.push(inst);
-    }
-  }
-
-  // sort by date/time
-  res.sort((a, b) => a.date.getTime() - b.date.getTime() || (parseTimeToMinutes(a.start) ?? 0) - (parseTimeToMinutes(b.start) ?? 0));
-  return res;
-}
-
-const WeeklyCalendar = forwardRef<WeeklyCalendarHandle | null, Props>(function WeeklyCalendar({ referenceDate, todos, onOpenTask, showToast, onHistoryChange }, ref) {
+const WeeklyCalendar = forwardRef<WeeklyCalendarHandle | null, Props>(function WeeklyCalendar({ referenceDate, todos, onOpenTask, showToast, onHistoryChange, onTasksChange }, ref) {
   const [now, setNow] = useState(() => new Date());
   const scrollRef = useRef<HTMLDivElement | null>(null);
 
@@ -423,7 +327,7 @@ const WeeklyCalendar = forwardRef<WeeklyCalendarHandle | null, Props>(function W
     }
   }
 
-  const pinnedTasks = useMemo<PinnedTask[]>(() => {
+  const pinnedItems = useMemo<PinnedItem[]>(() => {
     return todos
       .filter(t => !!t.due)
       .map(t => {
@@ -433,29 +337,29 @@ const WeeklyCalendar = forwardRef<WeeklyCalendarHandle | null, Props>(function W
           id: t.id,
           title: t.text,
           date: parsed,
-          priority: (t.priority ?? "medium") as PinnedTask["priority"],
+          priority: (t.priority ?? "medium") as PinnedItem["priority"],
           completed: !!t.done,
-        } as PinnedTask;
+        } as PinnedItem;
       })
-      .filter((x): x is PinnedTask => x !== null)
+      .filter((x): x is PinnedItem => x !== null)
       .filter(t => isSameWeek(t.date, anchorDate));
   }, [todos, anchorDate]);
 
-  const tasksByDay = useMemo(() => {
-    const map = new Map<string, PinnedTask[]>();
+  const itemsByDay = useMemo(() => {
+    const map = new Map<string, PinnedItem[]>();
 
     for (const d of days) {
       map.set(d.toDateString(), []);
     }
 
-    for (const task of pinnedTasks) {
-      const key = task.date.toDateString();
+    for (const item of pinnedItems) {
+      const key = item.date.toDateString();
       if (!map.has(key)) map.set(key, []);
-      map.get(key)!.push(task);
+      map.get(key)!.push(item);
     }
 
-    for (const tasks of map.values()) {
-      tasks.sort((a, b) => {
+    for (const items of map.values()) {
+      items.sort((a, b) => {
         if (a.completed !== b.completed) {
           return a.completed ? 1 : -1;
         }
@@ -464,153 +368,61 @@ const WeeklyCalendar = forwardRef<WeeklyCalendarHandle | null, Props>(function W
     }
 
     return map;
-  }, [days, pinnedTasks]);
+  }, [days, pinnedItems]);
 
+  const {
+    timetableTasks,
+    setTimetableTasks,
+    addTimetableTask: addTimetableTaskHook,
+    updateTimetableTask: updateTimetableTaskHook,
+    applyInstanceEditOnly: applyInstanceEditOnlyHook,
+    applyInstanceDeleteOnly: applyInstanceDeleteOnlyHook,
+    deleteThisAndFuture: deleteThisAndFutureHook,
+    undo: timetableUndoHook,
+    redo: timetableRedoHook,
+    canUndo: timetableCanUndoHook,
+    canRedo: timetableCanRedoHook,
+  } = useTimetable({ historyMax: 200 });
 
-  const [timetableTasks, setTimetableTasks] = useState<TimetableTask[]>(() => {
-    const fromStorage = loadTimetableFromStorage();
-    if (fromStorage.length > 0) return fromStorage;
-    // fallback examples
-    return [
-      {
-        id: "tt-1",
-        title: "CS2040S Lecture",
-        dayIndex: 1,
-        start: "10:00",
-        end: "12:00",
-        priority: "high",
-        tags: ["lecture"],
-      },
-      {
-        id: "tt-2",
-        title: "Group Meeting CS2103T",
-        dayIndex: 1,
-        start: "10:00",
-        end: "11:45",
-        priority: "medium",
-        tags: ["meeting"],
-      },
-      {
-        id: "tt-3",
-        title: "CS1010 Tutorial TA",
-        dayIndex: 5,
-        start: "13:00",
-        end: "14:15",
-        priority: "low",
-        tags: ["tutorial"],
-      },
-    ];
-  });
+  useEffect(() => {
+    onTasksChange?.(timetableTasks);
+  }, [onTasksChange, timetableTasks])
 
-  const pastRef = useRef<TimetableTask[][]>([]);
-  const futureRef = useRef<TimetableTask[][]>([]);
-  const isApplyingHistoryRef = useRef(false);
-  
   const lastHistoryRef = useRef({ canUndo: false, canRedo: false });
-
-  const notifyHistoryChange = useCallback(() => {
+  useEffect(() => {
     if (!onHistoryChange) return;
-
-    const next = {
-      canUndo: pastRef.current.length > 0,
-      canRedo: futureRef.current.length > 0,
-    };
-
+    const next = { canUndo: timetableCanUndoHook(), canRedo: timetableCanRedoHook() };
     const prev = lastHistoryRef.current;
-
     if (prev.canUndo !== next.canUndo || prev.canRedo !== next.canRedo) {
       lastHistoryRef.current = next;
       onHistoryChange(next);
     }
-  }, [onHistoryChange]);
-
-  const commitChange = useCallback((next: TimetableTask[]) => {
-    if (!isApplyingHistoryRef.current) {
-      const snapshot = JSON.parse(JSON.stringify(timetableTasks)) as TimetableTask[];
-      pastRef.current.push(snapshot);
-      if (pastRef.current.length > 200) pastRef.current.shift();
-      futureRef.current = [];
-    }
-    setTimetableTasks(next);
-    notifyHistoryChange();
-  }, [timetableTasks, notifyHistoryChange]);
-
-  const timetableCanUndo = useCallback(() => pastRef.current.length > 0, []);
-  const timetableCanRedo = useCallback(() => futureRef.current.length > 0, []);
-
-  const timetableUndo = useCallback(() => {
-    if (!timetableCanUndo()) return;
-    isApplyingHistoryRef.current = true;
-    const current = JSON.parse(JSON.stringify(timetableTasks)) as TimetableTask[];
-    const prev = pastRef.current.pop() as TimetableTask[];
-    futureRef.current.unshift(current);
-    setTimetableTasks(prev);
-    isApplyingHistoryRef.current = false;
-    notifyHistoryChange();
-    play("undo", true);
-    showToast?.("Timetable: undone", 900);
-  }, [timetableCanUndo, timetableTasks, notifyHistoryChange, showToast]);
-
-  const timetableRedo = useCallback(() => {
-    if (!timetableCanRedo()) return;
-    isApplyingHistoryRef.current = true;
-    const current = JSON.parse(JSON.stringify(timetableTasks)) as TimetableTask[];
-    const next = futureRef.current.shift() as TimetableTask[];
-    pastRef.current.push(current);
-    setTimetableTasks(next);
-    isApplyingHistoryRef.current = false;
-    notifyHistoryChange();
-    play("redo", true);
-    showToast?.("Timetable: redone", 900);
-  }, [timetableCanRedo, timetableTasks, notifyHistoryChange, showToast]);
+  }, [timetableTasks, timetableCanUndoHook, timetableCanRedoHook, onHistoryChange]);
 
   useImperativeHandle(ref, () => ({
-    undo: timetableUndo,
-    redo: timetableRedo,
-    canUndo: timetableCanUndo,
-    canRedo: timetableCanRedo,
-  }), [timetableCanRedo, timetableCanUndo, timetableRedo, timetableUndo]);
-
-  useEffect(() => {
-    saveTimetableToStorage(timetableTasks);
-  }, [timetableTasks]);
+    undo: timetableUndoHook,
+    redo: timetableRedoHook,
+    canUndo: () => timetableCanUndoHook(),
+    canRedo: () => timetableCanRedoHook(),
+  }), [timetableUndoHook, timetableRedoHook, timetableCanUndoHook, timetableCanRedoHook]);
   
   const instances = useMemo(() => generateInstancesForWeek(timetableTasks, weekStart), [timetableTasks, weekStart]);
   
   function applyInstanceEditOnly(templateId: string, date: Date, override: Partial<Omit<TimetableTask, "id" | "exceptions" | "recurrence">>) {
-    const next = timetableTasks.map(t => {
-      if (t.id !== templateId) return t;
-      const dateKey = formatDateKey(date);
-      const ex = [...(t.exceptions ?? [])];
-      const idx = ex.findIndex(x => x.date === dateKey);
-      const entry = { date: dateKey, override };
-      if (idx === -1) ex.push(entry);
-      else ex[idx] = { ...ex[idx], override: { ...ex[idx].override, ...override } };
-      return { ...t, exceptions: ex };
-    });
-    commitChange(next);
+    applyInstanceEditOnlyHook(templateId, date, override);
     showToast?.("This occurence updated", 900);
     play("click", false);
   }
 
   function applyInstanceDeleteOnly(templateId: string, date: Date) {
-    const next = timetableTasks.map(t => {
-      if (t.id !== templateId) return t;
-      const dateKey = formatDateKey(date);
-      const ex = [...(t.exceptions ?? [])];
-      const idx = ex.findIndex(x => x.date === dateKey);
-      if (idx === -1) ex.push({ date: dateKey, deleted: true });
-      else ex[idx] = { ...ex[idx], deleted: true, override: ex[idx].override };
-      return { ...t, exceptions: ex };
-    });
-    commitChange(next);
+    applyInstanceDeleteOnlyHook(templateId, date);
     showToast?.("This occurence deleted", 900);
     play("delete", false);
   }  
 
   const maxVisibleLines = useMemo(() => {
     let max = 0;
-    for (const [dayKey, tasks] of tasksByDay.entries()) {
+    for (const [dayKey, tasks] of itemsByDay.entries()) {
       const isExpanded = expandedDays.has(dayKey);
       const count = tasks.length;
       const hasMore = count > MAX_PINNED_PER_DAY;
@@ -626,12 +438,12 @@ const WeeklyCalendar = forwardRef<WeeklyCalendarHandle | null, Props>(function W
     }
 
     return max;
-  }, [tasksByDay, expandedDays]);
+  }, [itemsByDay, expandedDays]);
 
   const allDayHeight =
     maxVisibleLines === 0
       ? 0
-      : maxVisibleLines * ALL_DAY_TASK_HEIGHT + (Math.max(0, maxVisibleLines - 1)) * ALL_DAY_TASK_GAP + 12;
+      : maxVisibleLines * ALL_DAY_ITEM_HEIGHT + (Math.max(0, maxVisibleLines - 1)) * ALL_DAY_ITEM_GAP + 12;
 
   useEffect(() => {
     const el = scrollRef.current;
@@ -677,52 +489,15 @@ const WeeklyCalendar = forwardRef<WeeklyCalendarHandle | null, Props>(function W
     return () => window.removeEventListener("keydown", onKeyDown);
   }, []);
 
-  function getPriorityStyle(priority: PinnedTask["priority"], completed: boolean): React.CSSProperties {
-    if (completed) {
-      return {
-        background: "var(--prio-completed-bg)",
-        color: "var(--prio-completed-text)",
-        textDecoration: "line-through",
-        opacity: 0.7,
-      };
-    }
-
-    const map: Record<PinnedTask['priority'], { bg: string; color: string }> = {
-      high: { bg: "var(--prio-high-bg)", color: "var(--prio-high)" },
-      medium: { bg: "var(--prio-medium-bg)", color: "var(--prio-medium)" },
-      low: { bg: "var(--prio-low-bg)", color: "var(--prio-low)" },
-    };
-
-    return {
-      background: map[priority].bg,
-      color: map[priority].color,
-    };
-  }
-
-  useEffect(() => {
-    saveTimetableToStorage(timetableTasks);
-  }, [timetableTasks]);
-
   function addTimetableTask(task: Omit<TimetableTask, "id">) {
-    let taskToStore: Omit<TimetableTask, "id"> = task;
-
-    if (!task.recurrence) {
-      const oneDate = addDays(weekStart, task.dayIndex);
-      const dateKey = formatDateKey(oneDate);
-      taskToStore = { ...task, oneOffDate: dateKey };
-    }
-
-    const t: TimetableTask = { ...taskToStore, id: `tt-${Date.now()}-${Math.floor(Math.random() * 1000)}` };
-    const next = [...timetableTasks, t];
-    commitChange(next);
+    addTimetableTaskHook(task);
     play("click", false);
     haptic(10);
     showToast?.("Timetable task added", 900);
   }
 
   function updateTimetableTask(id:string, payload: Omit<TimetableTask, "id">) {
-    const next = timetableTasks.map(t => (t.id === id ? { ...t, ...payload } : t));
-    commitChange(next);
+    updateTimetableTaskHook(id, payload);
     play("click", false);
     haptic(10);
     showToast?.("Timetable task updated", 800);
@@ -734,8 +509,8 @@ const WeeklyCalendar = forwardRef<WeeklyCalendarHandle | null, Props>(function W
     // group instances by dayIndex
     const byDay = new Map<number, (Instance & { startMin: number; endMin: number })[]>();
     for (const inst of instances) {
-      const s = parseTimeToMinutes(inst.start);
-      const e = parseTimeToMinutes(inst.end);
+      const s = parseTimeToMinutes(inst.start ?? "");
+      const e = parseTimeToMinutes(inst.end ?? "");
       if (s === null || e === null) continue;
       const arr = byDay.get(inst.dayIndex) ?? [];
       arr.push({ ...inst, startMin: s, endMin: e });
@@ -821,6 +596,7 @@ const WeeklyCalendar = forwardRef<WeeklyCalendarHandle | null, Props>(function W
           tags: payload.tags,
           dayIndex: payload.dayIndex,
           notes: payload.notes,
+          reminders: payload.reminders,
         };
         applyInstanceEditOnly(editTimetableId, editingInstanceDate, override);
       }
@@ -835,17 +611,7 @@ const WeeklyCalendar = forwardRef<WeeklyCalendarHandle | null, Props>(function W
   }
 
   function deleteThisAndFuture(templateId: string, date: Date) {
-    const endDate = formatDateKey(addDays(date, -1));
-    const next = timetableTasks.map(t => {
-      if (t.id !== templateId) return t;
-      const newRec = {
-        ...(t.recurrence ?? {}),
-        freq: t.recurrence?.freq ?? "weekly",
-        endDate,
-      };
-      return { ...t, recurrence: newRec };
-      });
-    commitChange(next);
+    deleteThisAndFutureHook(templateId, date);
     play("delete", false);
     haptic(10);
     showToast?.("This and future occurrences deleted", 900);
@@ -861,8 +627,7 @@ const WeeklyCalendar = forwardRef<WeeklyCalendarHandle | null, Props>(function W
       const choice = window.prompt("Delete: (1): only this, (2) this and future, (3) all occurences - Enter 1/2/3", "1");
       if (choice === "3") {
         // delete entire
-        const next = timetableTasks.filter(t => t.id !== editTimetableId);
-        commitChange(next);
+        setTimetableTasks(prev => prev.filter(t => t.id !== editTimetableId));
       } else if (choice === "2") {
         // delete current and all future instances
         deleteThisAndFuture(editTimetableId, editingInstanceDate);
@@ -870,6 +635,8 @@ const WeeklyCalendar = forwardRef<WeeklyCalendarHandle | null, Props>(function W
         // only this instance
         applyInstanceDeleteOnly(editTimetableId, editingInstanceDate);
       }
+      play("delete", false);
+      showToast?.("Timetable removed", 900);
     }
 
     setEditTimetableOpen(false);
@@ -1034,11 +801,11 @@ const WeeklyCalendar = forwardRef<WeeklyCalendarHandle | null, Props>(function W
           >
             {days.map(d => {
               const dayKey = d.toDateString();
-              const tasks = tasksByDay.get(dayKey) ?? [];
+              const items = itemsByDay.get(dayKey) ?? [];
               const isExpanded = expandedDays.has(dayKey);
 
-              const hasMore = tasks.length > MAX_PINNED_PER_DAY;
-              const visibleTasks = isExpanded ? tasks : tasks.slice(0, MAX_PINNED_PER_DAY);
+              const hasMore = items.length > MAX_PINNED_PER_DAY;
+              const visibleItems = isExpanded ? items : items.slice(0, MAX_PINNED_PER_DAY);
 
               return (
                 <div key={dayKey} style={{
@@ -1052,8 +819,8 @@ const WeeklyCalendar = forwardRef<WeeklyCalendarHandle | null, Props>(function W
                   alignItems: "stretch",
                   justifyContent: "flex-start",
                 }}>
-                  {visibleTasks.map(t => (
-                    <div key={t.id} title={t.title} onClick={(e) => { e.stopPropagation(); handlePinnedClick(t.id); }} role="button" style={{
+                  {visibleItems.map(i => (
+                    <div key={i.id} title={i.title} onClick={(e) => { e.stopPropagation(); handlePinnedClick(i.id); }} role="button" style={{
                       display: "block",
                       width: "100%",
                       minWidth: 0,
@@ -1064,17 +831,17 @@ const WeeklyCalendar = forwardRef<WeeklyCalendarHandle | null, Props>(function W
                       padding: "4px 6px",
                       fontSize: 12,
                       boxSizing: "border-box",
-                      marginBottom: ALL_DAY_TASK_GAP,
-                      height: ALL_DAY_TASK_HEIGHT,
-                      lineHeight: `${ALL_DAY_TASK_HEIGHT - 4}px`,
+                      marginBottom: ALL_DAY_ITEM_GAP,
+                      height: ALL_DAY_ITEM_HEIGHT,
+                      lineHeight: `${ALL_DAY_ITEM_HEIGHT - 4}px`,
                       cursor: "pointer",
-                      ...getPriorityStyle(t.priority, t.completed)
-                    }}>{t.title}</div>
+                      ...(TimetableItem.getPriorityStyle?.(i.priority, i.completed) ?? {})
+                    }}>{i.title}</div>
                   ))}
 
                   {hasMore && (
                     <div style={{
-                      height: ALL_DAY_TASK_HEIGHT,
+                      height: ALL_DAY_ITEM_HEIGHT,
                       display: "flex",
                       justifyContent: "flex-end",
                       alignItems: "center",
@@ -1089,7 +856,7 @@ const WeeklyCalendar = forwardRef<WeeklyCalendarHandle | null, Props>(function W
                           opacity: 0.9,
                         }}
                       >
-                        {isExpanded ? "Collapse" : `+${tasks.length - MAX_PINNED_PER_DAY} more`}
+                        {isExpanded ? "Collapse" : `+${items.length - MAX_PINNED_PER_DAY} more`}
                       </button>
                     </div>
                   )}
@@ -1125,90 +892,39 @@ const WeeklyCalendar = forwardRef<WeeklyCalendarHandle | null, Props>(function W
             </div>
 
             {/* Timetable tasks */}
-            {instances.map(tasks => {
-              const layout = instanceLayout.get(tasks.id) ?? { colIndex: 0, colCount: 1 };
+            {instances.map(inst => {
+              const layout = instanceLayout.get(inst.id) ?? { colIndex: 0, colCount: 1 };
 
-              const startMin = parseTimeToMinutes(tasks.start);
-              const endMin = parseTimeToMinutes(tasks.end);
+              const startMin = parseTimeToMinutes(inst.start ?? "");
+              const endMin = parseTimeToMinutes(inst.end ?? "");
               if (startMin === null || endMin === null) return null;
 
-              const top = (startMin / 60) * HOUR_HEIGHT;
-              const height = Math.max(8, ((endMin - startMin) / 60) * HOUR_HEIGHT);
-
-              const dayWidth = 100 / 7;
-              const colWidth = dayWidth / layout.colCount;
-              const left = dayWidth * tasks.dayIndex + colWidth * layout.colIndex;
-
-              const pStyle = getPriorityStyle(tasks.priority, tasks.completed);
-              const background = (pStyle.background as string) ?? "var(--prio-medium-bg)";
-              const color = (pStyle.color as string) ?? "var(--prio-medium)";
-
               return (
-                <div
-                  key={tasks.id}
-                  title={`${tasks.title} ${String(tasks.start)}-${String(tasks.end)}`}
-                  onClick={(e) => { e.stopPropagation(); startEditTimetable(tasks.templateId, tasks.date); }}
-                  role="button"
-                  style={{
-                    position: "absolute",
-                    top,
-                    left: `${left}%`,
-                    width: `${colWidth}%`,
-                    height,
-                    padding: 6,
-                    boxSizing: "border-box",
-                    borderRadius: 6,
-                    overflow: "hidden",
-                    fontSize: 12,
-                    border: "1px solid var(--app-border)",
-                    background,
-                    color,
-                    zIndex: 10,
-                    display: "flex",
-                    alignItems: "center",
-                    whiteSpace: "wrap",
-                    textOverflow: "ellipsis",
-                    cursor: "pointer",
-                  }}
-                >
-                  <div style={{ display: "flex", alignItems: "center", width: "100%", minWidth: 0, gap: 8 }}>
-                    <div style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                      {tasks.title}
-                    </div>
-
-                    {/* notes icon (only show when notes exist) */}
-                    {tasks.notes ? (
-                      <div
-                        aria-hidden
-                        title={tasks.notes}
-                        style={{
-                          flex: "0 0 auto",
-                          display: "inline-flex",
-                          alignItems: "center",
-                          justifyContent: "center",
-                          padding: "2px 6px",
-                          borderRadius: 6,
-                          fontSize: 12,
-                          opacity: 0.95,
-                          background: "rgba(0, 0, 0, 0.06)",
-                          color: "inherit",
-                          marginLeft: 4,
-                          pointerEvents: "auto",
-                        }}
-                      >
-                        📝
-                      </div>
-                    ) : null}
-                  </div>
-                </div>
+                <TimetableItem
+                  key={inst.id}
+                  id={inst.id}
+                  templateId={inst.templateId}
+                  title={inst.title}
+                  startMin={startMin}
+                  endMin={endMin}
+                  dayIndex={inst.dayIndex}
+                  colIndex={layout.colIndex}
+                  colCount={layout.colCount}
+                  notes={inst.notes}
+                  priority={inst.priority ?? "medium"}
+                  completed={inst.completed}
+                  hourHeight={HOUR_HEIGHT}
+                  onEdit={startEditTimetable}
+                  date={inst.date}
+                />
               );
             })}
 
             {/* Preview rectangle while drag/click creating */}
             {isCreating && createStartMin !== null && createEndMin !== null && createDayIndex !== null && (
               (() => {
-                const topPx = (createStartMin / 60) * HOUR_HEIGHT;
-                const heightPx = Math.max(8, ((createEndMin - createStartMin) / 60) * HOUR_HEIGHT);
+                const top = (createStartMin / 60) * HOUR_HEIGHT;
+                const height = Math.max(8, ((createEndMin - createStartMin) / 60) * HOUR_HEIGHT);
                 const dayWidthPerc = 100 / 7;
                 const leftPerc = dayWidthPerc * createDayIndex;
                 return (
@@ -1216,10 +932,10 @@ const WeeklyCalendar = forwardRef<WeeklyCalendarHandle | null, Props>(function W
                     aria-hidden
                     style={{
                       position: "absolute",
-                      top: topPx,
+                      top,
                       left: `${leftPerc}%`,
                       width: `${dayWidthPerc}%`,
-                      height: heightPx,
+                      height,
                       padding: 6,
                       boxSizing: "border-box",
                       borderRadius: 6,
@@ -1315,7 +1031,6 @@ const WeeklyCalendar = forwardRef<WeeklyCalendarHandle | null, Props>(function W
         prefill={addPrefill}
         onClose={() => { setAddOpen(false); setAddPrefill(undefined); }}
         onSave={payload => {
-          console.log("TimetableEditor onSave payload:", payload);
           addTimetableTask(payload);
           setAddPrefill(undefined);
           setAddOpen(false);

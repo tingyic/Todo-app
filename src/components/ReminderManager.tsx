@@ -2,6 +2,8 @@ import { useEffect, useRef, useState, useCallback } from "react";
 import type { Todo } from "../types";
 import { parseLocalDateTime } from "../utils/dates";
 import { getPushPublicKey, subscribeForPush } from "../utils/push";
+import type { TimetableTask } from "./TimetableEditor";
+import { occursOnDate } from "../hooks/useTimetable";
 
 const SERVER_ORIGIN = import.meta.env.VITE_PUSH_SERVER_ORIGIN || "";
 function serverUrl(path: string) {
@@ -9,11 +11,13 @@ function serverUrl(path: string) {
 }
 
 type NotifOpts = NotificationOptions & { renotify?: boolean};
-type Props = { todos: Todo[]; enabled?: boolean };
+type Props = { todos: Todo[]; enabled?: boolean; timetableTasks?: TimetableTask[]; };
+
+type Notifiable = {id: string; text: string; due?: string | null; tags?: string[]; };
 
 type FiredReminder = {
   key: string;
-  todo: Todo;
+  todo: Todo | Notifiable;
   label: string;
   fireTime: number;
 };
@@ -113,7 +117,8 @@ type ElectronAPI = {
   schedulesList?: () => Promise<{ ok?: boolean; schedules?: ScheduleItem[] }>;
 };
 
-export default function ReminderManager({ todos, enabled = true }: Props) {
+export default function ReminderManager({ todos, timetableTasks = [], enabled = true }: Props) {
+
   const timers = useRef<Map<string, number>>(new Map()); // key => timerId
   const [toasts, setToasts] = useState<Toast[]>([]);
 
@@ -128,6 +133,13 @@ export default function ReminderManager({ todos, enabled = true }: Props) {
   const subEndpointRef = useRef<string | null>(null);
 
   async function sendSchedulesToServer(endpoint: string, schedules: ScheduleItem[]) {
+    if (!SERVER_ORIGIN) {
+      if (import.meta.env.DEV) {
+        console.debug("[sendSchedulesToServer] skipping (no SERVER_ORIGIN configured)", { endpoint, count: schedules.length });
+      }
+      return;
+    }
+
     try {
       await fetch(serverUrl("/api/schedule"), {
         method: "POST",
@@ -135,11 +147,18 @@ export default function ReminderManager({ todos, enabled = true }: Props) {
         body: JSON.stringify({ endpoint, schedules }),
       });
     } catch (err) {
-      console.debug("sendSchedulesToServer failed", err);
+      if (import.meta.env.DEV) console.debug("sendSchedulesToServer failed", err);
     }
   }
 
   async function sendCancelToServer(endpoint: string, key: string) {
+    if (!SERVER_ORIGIN) {
+      if (import.meta.env.DEV) {
+        console.debug("[sendCancelToServer] skipping (no SERVER_ORIGIN configured)", { endpoint, key });
+      }
+      return;
+    }
+
     try {
       await fetch(serverUrl("/api/schedule/cancel"), {
         method: "POST",
@@ -147,7 +166,7 @@ export default function ReminderManager({ todos, enabled = true }: Props) {
         body: JSON.stringify({ endpoint, key }),
       });
     } catch (err) {
-      console.debug("sendCancelToServer failed", err);
+      if (import.meta.env.DEV) console.debug("sendCancelToServer failed", err);
     }
   }
 
@@ -168,6 +187,53 @@ export default function ReminderManager({ todos, enabled = true }: Props) {
           todoId: todo.id,
         };
         out.push({ key, whenMs, payload });
+      }
+    }
+    return out;
+  }
+
+  function addDays(base: Date, days: number) {
+    const d = new Date(base);
+    d.setDate(d.getDate() + days);
+    return d;
+  }
+
+  function parseHHMM(time?: string) {
+    if (!time) return null;
+    const m = (time || "").match(/^(\d{1,2}):(\d{2})$/);
+    if (!m) return null;
+    const hh = Number(m[1]), mm = Number(m[2]);
+    if (!Number.isFinite(hh) || !Number.isFinite(mm)) return null;
+    return hh * 60 + mm;
+  }
+
+  function buildSchedulesFromTimetable(timetable: TimetableTask[], lookaheadDays = 28): ScheduleItem[] {
+    const out: ScheduleItem[] = [];
+    if (!Array.isArray(timetable)) return out;
+    const now = new Date();
+
+    for (let dayOffset = 0; dayOffset <= lookaheadDays; dayOffset++) {
+      const d = addDays(now, dayOffset);
+      const dateKey = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+      for (const t of timetable) {
+        if (t.oneOffDate && t.oneOffDate !== dateKey) continue;
+        if (!occursOnDate(t, d)) continue;
+        const startMin = parseHHMM(t.start);
+        if (startMin === null) continue;
+        const dt = new Date(d);
+        dt.setHours(Math.floor(startMin / 60), startMin % 60, 0);
+        const reminders = Array.isArray(t.reminders) ? t.reminders : [];
+        for (const m of reminders) {
+          const whenMs = dt.getTime() - Math.max(0, Math.floor(Number(m) || 0)) * 60_000;
+          if (whenMs <= Date.now()) continue;
+          const key = `${t.id}::${m}::${whenMs}`;
+          const payload: SchedulePayload = {
+            title: `Reminder: ${t.title}`,
+            body: (m === 0 ? "Starts now" : `Remind ${m} min before`) + ` • ${dt.toLocaleString()}`,
+            todoId: t.id,
+          };
+          out.push({ key, whenMs, payload });
+        }
       }
     }
     return out;
@@ -318,9 +384,12 @@ export default function ReminderManager({ todos, enabled = true }: Props) {
 
       const endpoint = getSubscriptionEndpoint(sub);
       subEndpointRef.current = endpoint;
-      const schedules = buildSchedulesFromTodos(todos);
-      if (endpoint && schedules.length) {
-        void sendSchedulesToServer(endpoint, schedules);
+
+      const todoSchedules = buildSchedulesFromTodos(todos);
+      const timetableSchedules = buildSchedulesFromTimetable?.(timetableTasks ?? []) ?? [];
+      const allSchedules = [...todoSchedules, ...timetableSchedules];
+      if (endpoint && allSchedules.length) {
+        void sendSchedulesToServer(endpoint, allSchedules);
       }
 
       setPushEnabled(true);
@@ -460,16 +529,21 @@ export default function ReminderManager({ todos, enabled = true }: Props) {
     }
   }
 
-  // doNotify wrapped in useCallback so effect deps are stable
-  const doNotify = useCallback(async (todo: Todo, label: string, key: string, fireTime: number) => {
+  const doNotify = useCallback(async (item: Todo | Notifiable, label: string, key: string, fireTime: number) => {
     setActiveReminders(r => {
       if (r.some(x => x.key === key)) return r;
-      return [...r, { key, todo, label, fireTime }];
+      const snapshot: Notifiable = { id: item.id, text: item.text, due: (item as Notifiable).due ?? null, tags: (item as Notifiable).tags };
+      return [...r, { key, todo: snapshot, label, fireTime }];
     });
-    const title = `Reminder: ${todo.text}`;
+    const title = `Reminder: ${item.text}`;
     const bodyParts: string[] = [];
-    if (todo.due) bodyParts.push(`Due: ${formatLocal(todo.due)}`);
-    if (todo.tags?.length) bodyParts.push(`Tags: ${todo.tags.join(", ")}`);
+
+    const dueVal = (item as Notifiable).due;
+    if (typeof dueVal === "string" && dueVal) bodyParts.push(`Due: ${formatLocal(dueVal)}`);
+
+    const tagsVal = (item as Notifiable).tags;
+    if (Array.isArray(tagsVal) && tagsVal.length) bodyParts.push(`Tags: ${tagsVal.join(", ")}`);
+
     const body = [label, ...bodyParts].join(" • ");
 
     const actions = [
@@ -483,9 +557,9 @@ export default function ReminderManager({ todos, enabled = true }: Props) {
       if (swRegRef.current && Notification.permission === "granted" && typeof swRegRef.current.showNotification === "function") {
         await swRegRef.current.showNotification(title, {
           body,
-          tag: `todo-reminder-${todo.id}`,
+          tag: `todo-reminder-${item.id}`,
           renotify: true,
-          data: { todoId: todo.id },
+          data: { todoId: item.id },
           actions,
         } as NotificationOptions);
         return;
@@ -496,7 +570,7 @@ export default function ReminderManager({ todos, enabled = true }: Props) {
 
     if (typeof Notification !== "undefined" && Notification.permission === "granted") {
       try {
-        const opts: NotifOpts = { body, tag: `todo-reminder-${todo.id}`, renotify: true};
+        const opts: NotifOpts = { body, tag: `todo-reminder-${item.id}`, renotify: true};
         const n = new Notification(title, opts);
         n.onclick = () => (window.focus(), n.close());
         return;
@@ -505,7 +579,7 @@ export default function ReminderManager({ todos, enabled = true }: Props) {
       }
     }
 
-    pushToast(todo.id, title, body);
+    pushToast(item.id, title, body);
     if (permissionRef.current === "default") setTimeout(() => void requestPermission(), 1000);
   }, [pushToast]);
 
@@ -519,7 +593,7 @@ export default function ReminderManager({ todos, enabled = true }: Props) {
     const delay = Math.max(0, whenMs - Date.now());
     const timeoutId = window.setTimeout(() => {
       const todo = todos.find(t => t.id === todoId);
-      if (todo) doNotify(todo, label, key, whenMs);
+      if (todo) doNotify({ id: todo.id, text: todo.text, due: todo.due, tags: todo.tags }, label, key, whenMs);
       timers.current.delete(key);
       if (key.startsWith("snooze::")) {
         void idbDelete(key).catch(() => {});
@@ -638,7 +712,7 @@ export default function ReminderManager({ todos, enabled = true }: Props) {
           // if snooze time is in the past but within a small grace window (e.g. < 1m), fire immediate
           if (when <= Date.now() + 60_000) {
             const todo = todos.find(t => t.id === r.todoId);
-            if (todo) void doNotify(todo, `Snoozed reminder`, r.key, when);
+            if (todo) void doNotify({ id: todo.id, text: todo.text, due: todo.due, tags: todo.tags}, `Snoozed reminder`, r.key, when);
             await idbDelete(r.key).catch(() => {});
             continue;
           }
@@ -717,7 +791,7 @@ export default function ReminderManager({ todos, enabled = true }: Props) {
 
         const delay = Math.max(0, fireAt - Date.now());
         const timerId = window.setTimeout(() => {
-          void doNotify(todo, m === 0 ? "Due now" : `Remind ${m} min before`, key, fireAt);
+          void doNotify({ id: todo.id, text: todo.text, due: todo.due, tags: todo.tags }, m === 0 ? "Due now" : `Remind ${m} min before`, key, fireAt);
           timers.current.delete(key);
         }, delay);
         timers.current.set(key, timerId);
@@ -743,6 +817,92 @@ export default function ReminderManager({ todos, enabled = true }: Props) {
             const schedules: ScheduleItem[] = [{ key, whenMs: fireAt, payload }];
             void sendSchedulesToServer(endpoint, schedules);
           }
+        }
+      }
+    }
+
+    function registerScheduleGeneric(key: string, whenMs: number, payload: SchedulePayload, onFire: () => void) {
+      // clear existing for same key
+      if (timers.current.has(key)) {
+        clearTimeout(timers.current.get(key)!);
+        timers.current.delete(key);
+      }
+
+      const delay = Math.max(0, whenMs - Date.now());
+      const timerId = window.setTimeout(() => {
+        try {
+          onFire();
+        } finally {
+          timers.current.delete(key);
+        }
+      }, delay);
+      timers.current.set(key, timerId);
+
+      const win = window as unknown as { electronAPI?: ElectronAPI };
+      if (win.electronAPI?.schedulesAdd) {
+        void win.electronAPI.schedulesAdd({ key, whenMs, payload }).catch(() => {});
+      } else {
+        const endpoint = subEndpointRef.current;
+        if (endpoint) {
+          void sendSchedulesToServer(endpoint, [{ key, whenMs, payload }]);
+        }
+      }
+    }
+
+    function scheduleForTimetable(t: TimetableTask) {
+      const reminders = Array.isArray(t.reminders) ? t.reminders : [];
+      if (!reminders.length) {
+        return;
+      }
+
+      const lookaheadDays = 28;
+      const now = new Date();
+
+      for (let i = 0; i <= lookaheadDays; i++) {
+        const d = addDays(now, i);
+        const dateKey = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+
+        if (t.oneOffDate && t.oneOffDate !== dateKey) {
+          continue;
+        }
+
+        const occurs = occursOnDate(t, d);
+        if (!occurs) {
+          if (i < 3) {
+            console.log("[scheduleForTimetable] occursOnDate=false", { id: t.id, dayOffset: i, date: dateKey });
+          }
+          continue;
+        }
+
+        const startMin = parseHHMM(t.start);
+        if (startMin === null) {
+          console.log("[scheduleForTimetable] parseHHMM failed for start", { id: t.id, start: t.start });
+          continue;
+        }
+
+        const start = new Date(d);
+        start.setHours(Math.floor(startMin / 60), startMin % 60, 0, 0);
+
+        for (const m of reminders) {
+          const fireAt = start.getTime() - Math.max(0, Number(m)) * 60_000;
+          if (fireAt <= Date.now()) continue;
+
+          const key = `${t.id}::${m}::${fireAt}`;
+          if (timers.current.has(key)) {
+            if (i < 2) console.log("[scheduleForTimetable] already scheduled", { key, id: t.id, when: new Date(fireAt).toLocaleString() });
+            continue;
+          }
+
+          const notifiable: Notifiable = { id: t.id, text: t.title, due: start.toISOString(), tags: t.tags };
+          const payload: SchedulePayload = {
+            title: `Reminder: ${t.title}`,
+            body: (m === 0 ? "Starts now" : `Remind ${m} min before`) + ` • ${start.toLocaleString()}`,
+            todoId: t.id,
+          };
+
+          registerScheduleGeneric(key, fireAt, payload, () => {
+            void doNotify(notifiable, m === 0 ? "Starts now" : `Remind ${m} min before`, key, fireAt);
+          });
         }
       }
     }
@@ -774,10 +934,17 @@ export default function ReminderManager({ todos, enabled = true }: Props) {
       scheduleFor(t);
     }
 
+    // schedule for timetable
+    for (const t of timetableTasks ?? []) {
+      currentIds.add(t.id);
+      cancelAllFor(t.id);
+      scheduleForTimetable(t);
+    }
+
     // clear timers for deleted todos
     for (const key of Array.from(timers.current.keys())) {
       const parts = key.split("::");
-      const maybeId = parts[1] ?? parts[0];
+      const maybeId = key.startsWith("snooze::") ? parts[1] : parts[0];
       if (maybeId && !currentIds.has(maybeId)) {
         clearTimeout(timers.current.get(key)!);
         timers.current.delete(key);
@@ -799,7 +966,7 @@ export default function ReminderManager({ todos, enabled = true }: Props) {
     }, 60_000);
 
     return () => clearInterval(reconciler);
-  }, [todos, enabled, doNotify]);
+  }, [todos, timetableTasks, enabled, doNotify, pushToast]);
 
   return (
     <>

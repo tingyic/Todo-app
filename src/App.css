@@ -1440,6 +1440,60 @@ kbd.help-kbd, .help-kbd kbd {
   color: var(--app-text);
 }
 
+.timetable-editor .reminder-option,
+.timetable-editor .reminder-option[aria-pressed="true"] {
+  color: var(--app-text);
+  background: var(--btn-plain-bg);
+  border: 1px solid var(--btn-plain-border);
+}
+
+/* Timetable reminder buttons: inactive vs active */
+.reminder-btn {
+  padding: 6px 8px;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--app-text);
+  border: 1px solid var(--app-border);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  transition: background 180ms ease, color 180ms ease, box-shadow 180ms ease, transform 120ms ease;
+}
+
+.reminder-btn:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 20px rgba(2,6,23,0.04);
+}
+
+/* Active selected state: gradient + readable text + shadow */
+.reminder-btn.active {
+  background: linear-gradient(180deg, var(--help-fab-top, #e6f6ff), var(--help-fab-bottom, #a0d8ff));
+  color: var(--help-fab-text, #06233a);
+  border-color: transparent;
+  box-shadow: 0 10px 30px rgba(2,6,23,0.10);
+}
+
+.theme-dark .reminder-btn.active {
+  background: linear-gradient(180deg, var(--help-fab-top, #083b67), var(--help-fab-bottom, #0b66a6));
+  color: var(--help-fab-text, #fff);
+  box-shadow: 0 10px 30px rgba(0,0,0,0.45);
+}
+
+.reminder-check {
+  font-size: 12px;
+  line-height: 1;
+  opacity: 0.95;
+  display: inline-block;
+  padding-left: 2px;
+}
+
+.reminder-btn:focus {
+  outline: none;
+  box-shadow: 0 0 0 4px rgba(99,102,241,0.08);
+}
+
 .app-btn {
   padding: 8px 12px;
   border-radius: 8px;
